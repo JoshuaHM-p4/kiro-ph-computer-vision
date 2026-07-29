@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenCV + MediaPipe Demos</title>
+  <link rel="stylesheet" href="{{ url_for('shared.static', filename='css/neon.css') }}">
+  <style>
+    .hero { padding: 2.5rem 1.5rem 1rem; text-align: center; }
+    .hero h1 {
+      margin: 0;
+      font-size: clamp(1.6rem, 4vw, 2.6rem);
+      letter-spacing: .34em;
+      text-transform: uppercase;
+      color: var(--cyan);
+      text-shadow: 0 0 30px rgba(76,231,255,.45);
+    }
+    .hero p { color: var(--dim); margin: .6rem 0 0; }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+      max-width: 1100px;
+      margin: 1.5rem auto 0;
+      padding: 0 1.5rem 3rem;
+    }
+    .card {
+      display: flex;
+      flex-direction: column;
+      gap: .6rem;
+      border: 1px solid var(--edge);
+      border-radius: 12px;
+      background: var(--panel);
+      padding: 1.1rem 1.2rem 1.2rem;
+      position: relative;
+      overflow: hidden;
+      transition: transform 120ms ease, border-color 120ms ease;
+    }
+    .card:hover, .card:focus-within {
+      transform: translateY(-3px);
+      border-color: var(--cyan);
+    }
+    .card h2 { margin: 0; font-size: 1.05rem; color: var(--text); letter-spacing: .04em; }
+    .card .tag { color: var(--magenta); font-size: .72rem; letter-spacing: .18em; text-transform: uppercase; }
+    .card p { margin: 0; color: var(--dim); font-size: .86rem; line-height: 1.5; }
+    .card .actions { margin-top: auto; display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+    .card code {
+      display: block;
+      font-size: .72rem;
+      color: var(--dim);
+      background: rgba(0,0,0,.35);
+      border-radius: 6px;
+      padding: .4rem .5rem;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+    .warn-note { color: var(--amber); font-size: .76rem; }
+    footer { text-align: center; color: var(--dim); font-size: .78rem; padding: 0 1.5rem 3rem; }
+    footer code { color: var(--text); }
+  </style>
+</head>
+<body>
+  <div class="hero">
+    <h1>Vision Demos</h1>
+    <p>OpenCV + MediaPipe &middot; browser vision, Flask logic &middot; every demo also runs as a desktop window</p>
+  </div>
+
+  <main class="cards">
+    {% for demo in demos %}
+      {% set asset = assets.get(demo.slug) %}
+      <article class="card">
+        <span class="tag">{{ demo.tagline }}</span>
+        <h2>{{ demo.title }}</h2>
+        <p>{{ demo.description }}</p>
+        {% if asset and not asset.ok %}
+          <p class="warn-note">Assets missing ({{ asset.detail }}). Run:</p>
+          <code>{{ asset.fix }}</code>
+        {% elif asset %}
+          <p class="warn-note" style="color:var(--lime)">{{ asset.detail }} ready</p>
+        {% endif %}
+        <code>.venv/bin/python -m {{ demo.desktop_module }}</code>
+        <div class="actions">
+          <a class="button" href="{{ prefixes[demo.slug] }}/">Open web demo</a>
+          <span class="pill">standalone port {{ demo.port }}</span>
+        </div>
+      </article>
+    {% endfor %}
+  </main>
+
+  <footer>
+    <p>
+      Diagnostics: <a href="/echo/">landmark channel echo</a> &middot;
+      <a href="/demos.json">demos.json</a> &middot;
+      <a href="/health">health</a>
+    </p>
+    <p>
+      OpenCV menu instead of a browser: <code>.venv/bin/python -m demos.home.opencv_menu</code>
+    </p>
+    <p>Serving on localhost with no authentication &mdash; keep it off untrusted networks.</p>
+  </footer>
+</body>
+</html>

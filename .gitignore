@@ -57,6 +57,21 @@ htmlcov/
 *.bin
 models/
 
+# ---- Generated demo assets (regenerable, see demos/tools/) ----
+# Every one of these has a generator and each demo detects them missing and prints
+# the command, so the repo stays source-only:
+#   python -m demos.tools.make_sample_slides       slide_presenter/assets/slides
+#   python -m demos.tools.make_placeholder_sprites pngtuber/assets/sprites
+#   python -m demos.tools.make_sample_images       image_lab/assets/samples
+demos/slide_presenter/assets/slides/
+demos/pngtuber/assets/sprites/
+demos/image_lab/assets/samples/
+
+# ---- Vendored browser assets (third-party, ~36 MB, fetched by a tool) ----
+# demos/tools/vendor_web_assets.py downloads the MediaPipe wasm runtime and
+# .task models here so the web demos load without the CDN.
+demos/common/static/vendor/
+
 # ---- Media artifacts (generated output) ----
 outputs/
 *.avi

@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+{% block title %}6-7 Counter{% endblock %}
+{% block heading %}6-7 Counter{% endblock %}
+{% block tagline %}alternate your hands, up and down{% endblock %}
+
+{% block head %}
+<style>
+  /* The camera stays visible: you need to see whether you are in frame. */
+  .stage video { opacity: .85; }
+  .stage.preparing { box-shadow: inset 0 0 0 3px rgba(255, 190, 60, .8); }
+  .stage.counting { box-shadow: inset 0 0 0 2px rgba(140, 255, 140, .5); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="layout">
+  <div>
+    <div class="stage" id="stage">
+      <video id="cam" playsinline muted></video>
+      <canvas id="overlay" aria-label="Pose overlay and rep counter"></canvas>
+    </div>
+    <div class="status" id="status">waiting for camera&hellip;</div>
+  </div>
+
+  <aside>
+    <div class="panel" style="text-align:center">
+      <h2>Reps</h2>
+      <div class="big-number" id="r-count" aria-live="polite">0</div>
+      <p id="r-prompt" style="margin:.4rem 0 0;color:var(--cyan);font-size:.8rem;letter-spacing:.1em">
+        STEP INTO FRAME
+      </p>
+    </div>
+
+    <div class="panel">
+      <h2>Hands</h2>
+      <dl class="readout">
+        <dt>Left</dt><dd id="r-left">level</dd>
+        <dt>Right</dt><dd id="r-right">level</dd>
+        <dt>Tempo</dt><dd id="r-tempo">&mdash;</dd>
+        <dt>Last rep</dt><dd id="r-last">&mdash;</dd>
+        <dt>Tilt</dt><dd id="r-tilt">&mdash;</dd>
+      </dl>
+    </div>
+
+    <div class="panel">
+      <h2>Actions</h2>
+      <div class="button-row">
+        <button id="btn-reset" type="button">Reset</button>
+        <button id="btn-prepare" type="button">Re-prepare</button>
+        <button id="btn-start" type="button">Skip prepare</button>
+        <a class="button" id="btn-snap" href="#" download>Scoreboard PNG</a>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>How it counts</h2>
+      <ul class="help">
+        <li>One rep = the hands <b>swapping</b> which one is higher, like a see-saw.</li>
+        <li>Nothing is measured against a fixed height, so there is nothing to
+            calibrate and moving up or down in frame does not matter.</li>
+        <li>Pumping the same hand twice <em>cannot</em> count: a swap needs both hands.</li>
+        <li>The shaded band in the meter is the deadband &mdash; hands roughly level
+            hold the current side, so jitter never counts.</li>
+        <li>Keep your <b>shoulders and both hands</b> in frame; counting waits until
+            they are visible. Hips are not needed, so you can stand close.</li>
+      </ul>
+    </div>
+  </aside>
+</div>
+{% endblock %}
+
+{% block script %}
+import { LandmarkStream, bindStatusUi, fitCanvas }
+  from "{{ url_for('shared.static', filename='js/landmark-stream.js') }}";
+
+const BASE = {{ base_path | tojson }};
+
+const video = document.getElementById('cam');
+const canvas = document.getElementById('overlay');
+const ctx = canvas.getContext('2d');
+fitCanvas(canvas);
+
+const POSE_LINKS = [
+  [11, 12], [11, 13], [13, 15], [12, 14], [14, 16],
+  [11, 23], [12, 24], [23, 24], [23, 25], [24, 26],
+];
+let landmarks = null;
+
+const setText = (id, value) => { document.getElementById(id).textContent = value; };
+
+function drawSkeleton() {
+  if (!landmarks) return;
+  ctx.strokeStyle = 'rgba(140,255,140,0.85)';
+  ctx.lineWidth = 4;
+  POSE_LINKS.forEach(([a, b]) => {
+    const pa = landmarks[a], pb = landmarks[b];
+    if (!pa || !pb) return;
+    ctx.beginPath();
+    ctx.moveTo(pa.x * canvas.width, pa.y * canvas.height);
+    ctx.lineTo(pb.x * canvas.width, pb.y * canvas.height);
+    ctx.stroke();
+  });
+  ctx.fillStyle = '#e9f1ff';
+  landmarks.slice(11, 27).forEach((p) => {
+    if (!p) return;
+    ctx.beginPath();
+    ctx.arc(p.x * canvas.width, p.y * canvas.height, 5, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+/**
+ * Draw the signal the counter actually uses: a line between the wrists that tips
+ * one way or the other, plus a meter showing the tilt against its deadband.
+ * There are no horizontal threshold lines, because nothing is compared to a
+ * fixed height.
+ */
+function drawSeesaw(state) {
+  if (!landmarks || !state.poseVisible) return;
+  const left = landmarks[15];
+  const right = landmarks[16];
+  if (!left || !right) return;
+
+  const lx = left.x * canvas.width, ly = left.y * canvas.height;
+  const rx = right.x * canvas.width, ry = right.y * canvas.height;
+  const active = state.side && state.tiltMagnitude >= 0.5;
+
+  ctx.save();
+  ctx.strokeStyle = active ? 'rgba(140,255,140,.95)' : 'rgba(135,146,168,.6)';
+  ctx.lineWidth = 5;
+  ctx.shadowColor = active ? 'rgba(140,255,140,.7)' : 'transparent';
+  ctx.shadowBlur = 14;
+  ctx.beginPath();
+  ctx.moveTo(lx, ly);
+  ctx.lineTo(rx, ry);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  for (const [x, y, side] of [[lx, ly, 'left'], [rx, ry, 'right']]) {
+    const higher = state.side === side;
+    ctx.beginPath();
+    ctx.arc(x, y, higher ? 13 : 9, 0, Math.PI * 2);
+    ctx.fillStyle = higher ? '#8cff8c' : 'rgba(135,146,168,.7)';
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawTiltMeter(state) {
+  const barWidth = canvas.width * 0.34;
+  const barHeight = Math.max(10, canvas.height * 0.022);
+  const x = (canvas.width - barWidth) / 2;
+  const y = canvas.height * 0.8;
+  const centre = x + barWidth / 2;
+  const span = (state.tiltEnter || 0.15) * 3;
+  const deadHalf = ((state.tiltEnter || 0.15) / span) * (barWidth / 2);
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(10,8,16,.55)';
+  ctx.fillRect(x, y, barWidth, barHeight);
+  ctx.fillStyle = 'rgba(255,255,255,.10)';
+  ctx.fillRect(centre - deadHalf, y, deadHalf * 2, barHeight);
+  ctx.strokeStyle = 'rgba(120,220,255,.35)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x, y, barWidth, barHeight);
+
+  ctx.font = `${Math.round(canvas.height * 0.026)}px system-ui, sans-serif`;
+  ctx.fillStyle = '#8792a8';
+  ctx.textAlign = 'left';
+  ctx.fillText('RIGHT HIGHER', x, y - 6);
+  ctx.textAlign = 'right';
+  ctx.fillText('LEFT HIGHER', x + barWidth, y - 6);
+
+  if (state.tilt !== null && state.tilt !== undefined) {
+    const clamped = Math.max(-1, Math.min(1, state.tilt / span));
+    ctx.beginPath();
+    ctx.arc(centre + clamped * (barWidth / 2), y + barHeight / 2, barHeight * 0.75, 0, Math.PI * 2);
+    ctx.fillStyle = state.tiltMagnitude >= 0.5 ? '#8cff8c' : '#ffbe3c';
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+/** Big rep count in the top-right of the video, plus prepare feedback. */
+function drawCounter(state) {
+  const pad = Math.round(canvas.width * 0.03);
+  const size = Math.round(canvas.height * 0.26);
+
+  ctx.save();
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'top';
+  ctx.font = `700 ${size}px system-ui, sans-serif`;
+  ctx.shadowColor = 'rgba(140,255,140,.75)';
+  ctx.shadowBlur = Math.round(size * 0.35);
+  ctx.fillStyle = state.phase === 'counting' ? '#8cff8c' : 'rgba(140,255,140,.35)';
+  ctx.fillText(String(state.count), canvas.width - pad, pad);
+
+  ctx.shadowBlur = 0;
+  ctx.font = `600 ${Math.round(size * 0.16)}px system-ui, sans-serif`;
+  ctx.fillStyle = '#8792a8';
+  ctx.fillText('REPS', canvas.width - pad, pad + size * 1.02);
+  ctx.restore();
+
+  // Hint and prepare bar, centred low so they do not cover the body.
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.font = `600 ${Math.round(canvas.height * 0.05)}px system-ui, sans-serif`;
+  ctx.fillStyle = state.phase === 'counting' ? '#4ce7ff' : '#ffbe3c';
+  ctx.fillText(state.hint, canvas.width / 2, canvas.height * 0.9);
+
+  if (state.phase !== 'counting') {
+    const barWidth = canvas.width * 0.4;
+    const x = (canvas.width - barWidth) / 2;
+    const y = canvas.height * 0.94;
+    const h = Math.max(6, canvas.height * 0.016);
+    ctx.fillStyle = 'rgba(255,255,255,.15)';
+    ctx.fillRect(x, y, barWidth, h);
+    ctx.fillStyle = '#ffbe3c';
+    ctx.fillRect(x, y, barWidth * (state.prepareProgress || 0), h);
+  }
+  ctx.restore();
+}
+
+function onState(state) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawSkeleton();
+  drawSeesaw(state);
+  drawTiltMeter(state);
+  drawCounter(state);
+
+  const stage = document.getElementById('stage');
+  stage.classList.toggle('preparing', state.phase !== 'counting');
+  stage.classList.toggle('counting', state.phase === 'counting');
+
+  setText('r-count', state.count);
+  setText('r-left', state.hands.left.up ? 'HIGHER' : 'lower');
+  setText('r-right', state.hands.right.up ? 'HIGHER' : 'lower');
+  setText('r-tempo', state.repsPerMinute ? `${state.repsPerMinute}/min` : '—');
+  setText('r-last', state.lastRepSeconds ? `${state.lastRepSeconds.toFixed(2)}s` : '—');
+  setText('r-tilt', state.tilt === null ? '—' : `${state.tilt.toFixed(2)} torso`);
+  setText('r-prompt', state.hint);
+  document.getElementById('r-prompt').style.color =
+    state.phase === 'counting' ? 'var(--cyan)' : 'var(--amber)';
+  for (const [side, id] of [['left', 'r-left'], ['right', 'r-right']]) {
+    document.getElementById(id).style.color = state.hands[side].up ? 'var(--lime)' : '';
+  }
+}
+
+const stream = new LandmarkStream({
+  video,
+  basePath: BASE,
+  need: { pose: true, hands: false },
+  onState,
+  onStatus: bindStatusUi('conn-pill', 'status'),
+});
+
+// The skeleton is drawn from the landmarks we just sent, so the overlay tracks
+// the video exactly instead of lagging a round trip behind.
+const originalReadPose = stream.readPose.bind(stream);
+stream.readPose = (videoElement, timestamp) => {
+  const payload = originalReadPose(videoElement, timestamp);
+  landmarks = payload ? payload.points : null;
+  return payload;
+};
+
+document.getElementById('btn-reset').addEventListener('click', () => stream.sendCommand('reset'));
+document.getElementById('btn-prepare').addEventListener('click', () => stream.sendCommand('prepare'));
+document.getElementById('btn-start').addEventListener('click', () => stream.sendCommand('start'));
+document.getElementById('btn-snap').addEventListener('click', (event) => {
+  event.currentTarget.href = stream.snapshotUrl();
+});
+
+stream.start().catch((err) => {
+  document.getElementById('status').innerHTML =
+    `<span class="error">${err.message}</span> &mdash; camera permission and internet access are required.`;
+});
+{% endblock %}

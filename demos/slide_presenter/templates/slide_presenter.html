@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% block title %}Slide Presenter{% endblock %}
+{% block heading %}Slide Presenter{% endblock %}
+{% block tagline %}point to aim, pinch to advance{% endblock %}
+
+{% block head %}
+<style>
+  /* The webcam is a small picture-in-picture in the bottom-left corner, matching
+     the desktop app, so you can see what the tracker sees while presenting. */
+  .stage video {
+    position: absolute;
+    left: 14px;
+    bottom: 14px;
+    top: auto;
+    width: 22%;
+    height: auto;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    border: 1px solid var(--edge);
+    border-radius: 8px;
+    opacity: 1;
+    z-index: 2;
+    background: #000;
+  }
+  .stage.hide-cam video { display: none; }
+  .cam-label {
+    position: absolute;
+    left: 22px;
+    bottom: calc(14px + 0.2rem);
+    z-index: 3;
+    font-size: .68rem;
+    letter-spacing: .12em;
+    color: var(--cyan);
+    pointer-events: none;
+  }
+  .stage.hide-cam .cam-label { display: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="layout">
+  <div>
+    <div class="stage" id="stage">
+      <img class="slide" id="slide" alt="Current slide">
+      <canvas id="overlay" aria-label="Laser pointer overlay"></canvas>
+      <video id="cam" playsinline muted></video>
+      <span class="cam-label">YOU</span>
+    </div>
+    <div class="status" id="status">waiting for camera&hellip;</div>
+  </div>
+
+  <aside>
+    <div class="panel">
+      <h2>Deck</h2>
+      <dl class="readout">
+        <dt>Slide</dt><dd id="r-index">0 / 0</dd>
+        <dt>File</dt><dd id="r-name">&mdash;</dd>
+        <dt>Left hand</dt><dd id="r-left">{{ hands.previous | lower }}</dd>
+        <dt>Right hand</dt><dd id="r-right">{{ hands.next | lower }}</dd>
+      </dl>
+    </div>
+
+    <div class="panel">
+      <h2>Controls</h2>
+      <div class="button-row">
+        <button id="btn-prev" type="button">&larr; Previous</button>
+        <button id="btn-next" type="button">Next &rarr;</button>
+        <button id="btn-reload" type="button">Reload deck</button>
+        <button id="btn-swap" type="button">Swap hands</button>
+        <button id="btn-cam" type="button">Hide webcam</button>
+      </div>
+      <p id="swap-note" style="margin:.5rem 0 0;font-size:.76rem;color:var(--dim)">
+        Right hand = next, left = previous. If that feels backwards, press
+        <b>Swap hands</b>.
+      </p>
+      <p style="margin:.7rem 0 0;font-size:.78rem;color:var(--dim)">
+        Keyboard: <kbd>&larr;</kbd> <kbd>&rarr;</kbd> also work.
+      </p>
+    </div>
+
+    <div class="panel">
+      <h2>Gestures</h2>
+      <ul class="help">
+        <li><b>Point</b> with your index finger &mdash; the laser follows it</li>
+        <li><b>Pinch right hand</b> &mdash; next slide</li>
+        <li><b>Pinch left hand</b> &mdash; previous slide</li>
+        <li>One pinch moves exactly one slide.</li>
+      </ul>
+    </div>
+  </aside>
+</div>
+{% endblock %}
+
+{% block script %}
+import { LandmarkStream, bindStatusUi, fitCanvas }
+  from "{{ url_for('shared.static', filename='js/landmark-stream.js') }}";
+
+const BASE = {{ base_path | tojson }};
+const DECK = {{ deck | tojson }};
+
+const video = document.getElementById('cam');
+const slide = document.getElementById('slide');
+const canvas = document.getElementById('overlay');
+const ctx = canvas.getContext('2d');
+fitCanvas(canvas);
+
+let shownIndex = -1;
+if (!DECK.count) {
+  document.getElementById('status').innerHTML =
+    '<span class="error">No slides found.</span> Run: ' +
+    '<code>.venv/bin/python -m demos.tools.make_sample_slides</code>';
+}
+
+function showSlide(index) {
+  if (index === shownIndex || !DECK.count) return;
+  shownIndex = index;
+  slide.src = `${BASE}/slide/${index}`;
+}
+
+function drawLaser(state) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!state.laser) return;
+  const x = state.laser.x * canvas.width;
+  const y = state.laser.y * canvas.height;
+  const radius = Math.max(4, state.laserRadius * canvas.height);
+
+  const glow = ctx.createRadialGradient(x, y, 0, x, y, radius * 3);
+  glow.addColorStop(0, 'rgba(255,60,60,0.85)');
+  glow.addColorStop(1, 'rgba(255,60,60,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(x, y, radius * 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(x, y, Math.max(2, radius / 2.5), 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function onState(state) {
+  showSlide(state.index);
+  drawLaser(state);
+  document.getElementById('r-index').textContent = `${state.count ? state.index + 1 : 0} / ${state.count}`;
+  document.getElementById('r-name').textContent = state.name;
+  document.getElementById('btn-prev').disabled = state.atStart;
+  document.getElementById('btn-next').disabled = state.atEnd;
+  for (const [hand, id] of [['Left', 'r-left'], ['Right', 'r-right']]) {
+    const element = document.getElementById(id);
+    element.style.color = state.pinch[hand] ? 'var(--lime)' : '';
+  }
+}
+
+const stream = new LandmarkStream({
+  video,
+  basePath: BASE,
+  need: { hands: true },
+  numHands: 2,
+  onState,
+  onStatus: bindStatusUi('conn-pill', 'status'),
+});
+
+const step = (command) => stream.sendCommand(command);
+document.getElementById('btn-next').addEventListener('click', () => step('next'));
+document.getElementById('btn-prev').addEventListener('click', () => step('previous'));
+document.getElementById('btn-reload').addEventListener('click', () => {
+  shownIndex = -1;
+  step('reload');
+});
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'ArrowRight') step('next');
+  if (event.key === 'ArrowLeft') step('previous');
+});
+
+document.getElementById('btn-swap').addEventListener('click', () => {
+  const swapped = stream.toggleHandedness();
+  document.getElementById('swap-note').innerHTML = swapped
+    ? 'Swapped: <b>left</b> hand = next, <b>right</b> = previous.'
+    : 'Right hand = next, left = previous. If that feels backwards, press <b>Swap hands</b>.';
+});
+
+document.getElementById('btn-cam').addEventListener('click', (event) => {
+  const stage = document.getElementById('stage');
+  const hidden = stage.classList.toggle('hide-cam');
+  event.currentTarget.textContent = hidden ? 'Show webcam' : 'Hide webcam';
+});
+
+showSlide(0);
+stream.start().catch((err) => {
+  document.getElementById('status').innerHTML =
+    `<span class="error">${err.message}</span> &mdash; camera permission and internet access are required.`;
+});
+{% endblock %}

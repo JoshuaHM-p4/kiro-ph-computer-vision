@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}PNGTuber{% endblock %}
+{% block heading %}PNGTuber{% endblock %}
+{% block tagline %}head yaw and expression pick the sprite{% endblock %}
+
+{% block head %}
+<style>
+  .tuber-stage { background: #0b0812; }
+  .tuber-stage img.sprite {
+    position: absolute;
+    left: 50%;
+    bottom: 0;
+    height: 88%;
+    transform: translateX(-50%);
+    image-rendering: auto;
+    transition: transform 90ms linear;
+  }
+  .tuber-stage video { opacity: 0; }
+  .tuber-stage.preview video { opacity: .35; }
+  .sprite-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: .35rem; }
+  .sprite-grid img { width: 100%; border: 1px solid transparent; border-radius: 6px; background: #14101c; }
+  .sprite-grid img.active { border-color: var(--cyan); box-shadow: 0 0 12px rgba(76,231,255,.5); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="layout">
+  <div>
+    <div class="stage tuber-stage" id="stage">
+      <video id="cam" playsinline muted></video>
+      <img class="sprite" id="sprite" alt="Current avatar sprite">
+    </div>
+    <div class="status" id="status">waiting for camera&hellip;</div>
+  </div>
+
+  <aside>
+    <div class="panel">
+      <h2>Now showing</h2>
+      <dl class="readout">
+        <dt>Sprite</dt><dd id="r-sprite">center_neutral</dd>
+        <dt>Yaw</dt><dd id="r-yaw">&mdash;</dd>
+        <dt>Bucket</dt><dd id="r-bucket">center</dd>
+        <dt>Expression</dt><dd id="r-expression">neutral</dd>
+        <dt>Switches</dt><dd id="r-switches">0</dd>
+      </dl>
+      <p id="r-note" class="pill warn" style="margin-top:.6rem">calibrating</p>
+    </div>
+
+    <div class="panel">
+      <h2>Actions</h2>
+      <div class="button-row">
+        <button id="btn-calibrate" type="button">Recalibrate neutral</button>
+        <button id="btn-preview" type="button">Toggle camera</button>
+        <a class="button" id="btn-snap" href="#" download>Snapshot</a>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Sprite set</h2>
+      <div class="sprite-grid" id="grid">
+        {% for name in sprites %}
+          <img id="thumb-{{ name }}" src="{{ base_path }}/sprite/{{ name }}" alt="{{ name }}" title="{{ name }}">
+        {% endfor %}
+      </div>
+      {% if missing %}
+        <p class="status error">Missing {{ missing | length }} sprites. Run
+          <code>.venv/bin/python -m demos.tools.make_placeholder_sprites</code></p>
+      {% endif %}
+    </div>
+
+    <div class="panel">
+      <h2>Tips</h2>
+      <ul class="help">
+        <li>Hold a <b>relaxed face</b> for the first second: that becomes neutral.</li>
+        <li><b>Smile</b> for happy, <b>raise brows + open mouth</b> for surprised,
+            <b>lower brows or squint</b> for angry.</li>
+        <li>Turn your head past about 18&deg; to switch to a side sprite.</li>
+      </ul>
+    </div>
+  </aside>
+</div>
+{% endblock %}
+
+{% block script %}
+import { LandmarkStream, bindStatusUi }
+  from "{{ url_for('shared.static', filename='js/landmark-stream.js') }}";
+
+const BASE = {{ base_path | tojson }};
+
+const video = document.getElementById('cam');
+const stage = document.getElementById('stage');
+const sprite = document.getElementById('sprite');
+
+let shown = null;
+const setText = (id, value) => { document.getElementById(id).textContent = value; };
+
+function showSprite(name) {
+  if (name === shown) return;
+  if (shown) document.getElementById(`thumb-${shown}`)?.classList.remove('active');
+  shown = name;
+  sprite.src = `${BASE}/sprite/${name}`;
+  document.getElementById(`thumb-${name}`)?.classList.add('active');
+}
+
+function onState(state) {
+  showSprite(state.sprite);
+
+  // Idle bob, mirroring the desktop renderer. Talking bobs faster.
+  const speed = (state.expression === 'happy' || state.expression === 'surprised') ? 3.2 : 1.6;
+  const bob = Math.sin(performance.now() / 1000 * speed * Math.PI * 2) * 1.2;
+  sprite.style.transform = `translateX(-50%) translateY(${bob}%)`;
+
+  setText('r-sprite', state.sprite);
+  setText('r-yaw', state.yaw === null ? '—' : `${state.yaw.toFixed(1)}° (${state.yawMethod})`);
+  setText('r-bucket', state.yawBucket);
+  setText('r-expression', state.expression);
+  setText('r-switches', state.switches);
+
+  const note = document.getElementById('r-note');
+  if (state.calibrating) {
+    note.textContent = 'calibrating neutral — relax your face';
+    note.className = 'pill warn';
+  } else if (!state.faceVisible) {
+    note.textContent = 'no face detected';
+    note.className = 'pill warn';
+  } else {
+    note.textContent = 'tracking';
+    note.className = 'pill on';
+  }
+}
+
+const stream = new LandmarkStream({
+  video,
+  basePath: BASE,
+  need: { face: true, hands: false },
+  onState,
+  onStatus: bindStatusUi('conn-pill', 'status'),
+});
+
+document.getElementById('btn-calibrate').addEventListener('click', () => {
+  stream.sendCommand('calibrate', { now: performance.now() / 1000 });
+});
+document.getElementById('btn-preview').addEventListener('click', () => {
+  stage.classList.toggle('preview');
+});
+document.getElementById('btn-snap').addEventListener('click', (event) => {
+  event.currentTarget.href = stream.snapshotUrl();
+});
+
+showSprite('center_neutral');
+stream.start().catch((err) => {
+  document.getElementById('status').innerHTML =
+    `<span class="error">${err.message}</span> &mdash; camera permission and internet access are required.`;
+});
+{% endblock %}

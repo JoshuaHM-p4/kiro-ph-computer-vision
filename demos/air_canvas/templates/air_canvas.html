@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% block title %}Air Canvas{% endblock %}
+{% block heading %}Air Canvas{% endblock %}
+{% block tagline %}paint with your fingertip{% endblock %}
+
+{% block content %}
+<div class="layout">
+  <div>
+    <div class="stage">
+      <video id="cam" playsinline muted></video>
+      <canvas id="paint" aria-label="Paint layer"></canvas>
+      <canvas id="ui" aria-label="Palette and cursor overlay"></canvas>
+    </div>
+    <div class="status" id="status">waiting for camera&hellip;</div>
+  </div>
+
+  <aside>
+    <div class="panel">
+      <h2>Brush</h2>
+      <dl class="readout">
+        <dt>Tool</dt><dd id="r-tool">idle</dd>
+        <dt>Color</dt><dd id="r-color">cyan</dd>
+        <dt>Size</dt><dd id="r-size">0%</dd>
+        <dt>Opacity</dt><dd id="r-opacity">100%</dd>
+        <dt>Strokes</dt><dd id="r-strokes">0</dd>
+      </dl>
+    </div>
+
+    <div class="panel">
+      <h2>Actions</h2>
+      <div class="button-row">
+        <button id="btn-undo" type="button">Undo</button>
+        <button id="btn-clear" type="button">Clear</button>
+        <a class="button" id="btn-snap" href="#" download>Download PNG</a>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Gestures</h2>
+      <ul class="help">
+        <li><b>Index finger only</b> &mdash; draw</li>
+        <li><b>Index + middle</b> &mdash; hover, then rest on a palette cell to select it</li>
+        <li><b>Thumb-index pinch</b> &mdash; erase</li>
+        <li><b>Fist</b> &mdash; idle</li>
+        <li>Right rail: <b>size</b> and <b>opacity</b>. Rest to grab, then slide.</li>
+      </ul>
+    </div>
+  </aside>
+</div>
+{% endblock %}
+
+{% block script %}
+import { LandmarkStream, bindStatusUi, fitCanvas }
+  from "{{ url_for('shared.static', filename='js/landmark-stream.js') }}";
+
+const PALETTE = {{ palette | tojson }};
+const BASE = {{ base_path | tojson }};
+
+const video = document.getElementById('cam');
+const paint = document.getElementById('paint');
+const ui = document.getElementById('ui');
+const pctx = paint.getContext('2d');
+const uctx = ui.getContext('2d');
+
+/** Strokes are drawn once and kept; only the active tail arrives each frame. */
+let revision = -1;
+let lastPoint = null;
+let lastState = null;
+
+const resizePaint = fitCanvas(paint);
+fitCanvas(ui);
+// A resize wipes the bitmap, so force a full redraw from the server.
+window.addEventListener('resize', () => { revision = -1; });
+
+const setText = (id, value) => { document.getElementById(id).textContent = value; };
+const bgrCss = (bgr, alpha = 1) => `rgba(${bgr[2]},${bgr[1]},${bgr[0]},${alpha})`;
+
+function strokePath(ctx, stroke) {
+  const points = stroke.points || [];
+  if (!points.length) return;
+  ctx.save();
+  ctx.globalCompositeOperation = stroke.erase ? 'destination-out' : 'source-over';
+  ctx.strokeStyle = bgrCss(stroke.color, stroke.erase ? 1 : stroke.opacity);
+  ctx.lineWidth = Math.max(1, stroke.size * paint.height);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  points.forEach((p, i) => {
+    const x = p.x * paint.width, y = p.y * paint.height;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  if (points.length === 1) {
+    ctx.lineTo(points[0].x * paint.width + 0.01, points[0].y * paint.height);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Pull every committed stroke and repaint from scratch. */
+async function resync(targetRevision) {
+  const response = await fetch(`${BASE}/command`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Demo-Session': stream.sid },
+    body: JSON.stringify({ command: 'sync' }),
+  });
+  const body = await response.json();
+  pctx.clearRect(0, 0, paint.width, paint.height);
+  (body.strokes || []).forEach((stroke) => strokePath(pctx, stroke));
+  revision = body.revision ?? targetRevision;
+  lastPoint = null;
+}
+
+function drawUi(state) {
+  uctx.clearRect(0, 0, ui.width, ui.height);
+  const w = ui.width, h = ui.height;
+
+  PALETTE.forEach((cell) => {
+    const [x1, y1, x2, y2] = cell.rect;
+    const x = x1 * w, y = y1 * h, cw = (x2 - x1) * w, ch = (y2 - y1) * h;
+    const hovered = state.hover === cell.key;
+    const selected =
+      (cell.kind === 'color' && cell.value === state.colorName) ||
+      (cell.kind === 'tool' && state.colorName === 'eraser' && cell.value === 'eraser') ||
+      (cell.kind === 'slider' && state.grabbed === cell.key);
+
+    if (cell.kind === 'slider') {
+      const fraction = cell.value === 'size' ? state.sizeFraction : state.opacityFraction;
+      uctx.fillStyle = 'rgba(10,8,16,0.6)';
+      uctx.fillRect(x, y, cw, ch);
+      uctx.fillStyle = '#4ce7ff';
+      uctx.fillRect(x + 4, y + ch * (1 - fraction), cw - 8, ch * fraction);
+    } else if (cell.css) {
+      uctx.fillStyle = cell.css;
+      uctx.fillRect(x, y, cw, ch);
+    } else {
+      uctx.fillStyle = 'rgba(10,8,16,0.7)';
+      uctx.fillRect(x, y, cw, ch);
+      uctx.fillStyle = selected ? '#ffbe3c' : '#8792a8';
+      uctx.font = `${Math.round(ch * 0.34)}px sans-serif`;
+      uctx.fillText(cell.label, x + 6, y + ch * 0.62);
+    }
+
+    uctx.strokeStyle = selected ? '#ffffff' : 'rgba(120,220,255,0.35)';
+    uctx.lineWidth = selected ? 3 : 1;
+    uctx.strokeRect(x, y, cw, ch);
+
+    if (hovered && state.dwell > 0) {
+      uctx.strokeStyle = '#ff3cc8';
+      uctx.lineWidth = 4;
+      uctx.beginPath();
+      uctx.arc(x + cw / 2, y + ch / 2, Math.min(cw, ch) * 0.42,
+               -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * state.dwell);
+      uctx.stroke();
+    }
+  });
+
+  if (state.cursor) {
+    const cx = state.cursor.x * w, cy = state.cursor.y * h;
+    const radius = Math.max(4, state.size * h * (state.tool === 'erase' ? 2.5 : 1) / 2);
+    uctx.beginPath();
+    uctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    if (state.tool === 'draw') {
+      uctx.fillStyle = bgrCss(state.color, 0.9);
+      uctx.fill();
+    } else {
+      uctx.strokeStyle = state.tool === 'erase' ? '#ff5c5c' : '#ffbe3c';
+      uctx.lineWidth = 2;
+      uctx.stroke();
+    }
+  }
+}
+
+function onState(state) {
+  lastState = state;
+  if (state.revision !== revision) {
+    resync(state.revision);
+  } else if (state.activeStroke) {
+    const points = state.activeStroke.points || [];
+    const tail = points.length > 1 ? points.slice(-2)
+      : (lastPoint ? [lastPoint, points[0]] : points);
+    if (tail.length) strokePath(pctx, { ...state.activeStroke, points: tail });
+    lastPoint = points[points.length - 1] || lastPoint;
+  } else {
+    lastPoint = null;
+  }
+
+  drawUi(state);
+  setText('r-tool', state.tool);
+  setText('r-color', state.colorName);
+  setText('r-size', `${Math.round(state.sizeFraction * 100)}%`);
+  setText('r-opacity', `${Math.round(state.opacity * 100)}%`);
+  setText('r-strokes', state.strokeCount);
+}
+
+const stream = new LandmarkStream({
+  video,
+  basePath: BASE,
+  need: { hands: true },
+  numHands: 1,
+  onState,
+  onStatus: bindStatusUi('conn-pill', 'status'),
+});
+
+document.getElementById('btn-undo').addEventListener('click', () => stream.sendCommand('undo'));
+document.getElementById('btn-clear').addEventListener('click', () => stream.sendCommand('clear'));
+document.getElementById('btn-snap').addEventListener('click', (event) => {
+  event.currentTarget.href = stream.snapshotUrl();
+});
+
+stream.start().catch((err) => {
+  document.getElementById('status').innerHTML =
+    `<span class="error">${err.message}</span> &mdash; camera permission and internet access are required.`;
+});
+{% endblock %}

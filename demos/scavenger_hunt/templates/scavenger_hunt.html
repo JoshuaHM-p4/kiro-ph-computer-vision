@@ -1,0 +1,451 @@
+{% extends "base.html" %}
+{% block title %}Scavenger Hunt{% endblock %}
+{% block heading %}Scavenger Hunt{% endblock %}
+{% block tagline %}find real objects before the timer runs out{% endblock %}
+
+{% block head %}
+<style>
+  .prompt {
+    position: absolute; left: 0; right: 0; top: 8%;
+    text-align: center; z-index: 3; pointer-events: none;
+  }
+  .prompt .bring { font-size: .8rem; letter-spacing: .35em; color: var(--dim); text-transform: uppercase; }
+  .prompt .item {
+    font-size: clamp(1.8rem, 5.5vw, 3.4rem); font-weight: 700; letter-spacing: .04em;
+    color: var(--cyan); text-shadow: 0 0 28px rgba(76,231,255,.55); line-height: 1.05;
+  }
+  .prompt .hint { font-size: .8rem; color: var(--dim); margin-top: .2rem; }
+  .prompt.found .item { color: var(--lime); text-shadow: 0 0 30px rgba(140,255,140,.6); }
+  .prompt.missed .item { color: var(--magenta); }
+
+  .timer-bar { position: absolute; top: 0; left: 0; height: 8px; z-index: 4; transition: width .2s linear; }
+  .countdown {
+    position: absolute; top: 14px; left: 16px; z-index: 4;
+    font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums;
+  }
+  .score-badge {
+    position: absolute; right: 16px; bottom: 12px; z-index: 4; text-align: right;
+  }
+  .score-badge b { font-size: 2.2rem; color: var(--lime); font-variant-numeric: tabular-nums; }
+  .score-badge span { display: block; font-size: .66rem; letter-spacing: .2em; color: var(--dim); }
+  .hold {
+    position: absolute; left: 50%; bottom: 14%; transform: translateX(-50%); z-index: 4;
+    width: 40%; height: 12px; border: 1px solid var(--edge); border-radius: 999px; overflow: hidden;
+  }
+  .hold i { display: block; height: 100%; background: var(--lime); width: 0; transition: width .1s linear; }
+  .stage.hunt video { opacity: 1; }
+  .stage.hunt canvas { z-index: 2; }
+  .rounds { display: flex; gap: .3rem; flex-wrap: wrap; }
+  .rounds span {
+    width: 1.6rem; height: 1.6rem; border: 1px solid var(--edge); border-radius: 4px;
+    display: grid; place-items: center; font-size: .72rem; color: var(--dim);
+  }
+  .rounds span.ok { border-color: rgba(140,255,140,.6); color: var(--lime); }
+  .rounds span.miss { border-color: rgba(255,60,200,.5); color: var(--magenta); }
+  .rounds span.now { border-color: var(--cyan); color: var(--cyan); }
+  ul.items { columns: 2; font-size: .76rem; color: var(--dim); padding-left: 1.1rem; margin: 0; }
+
+  .setting { margin-top: .7rem; }
+  .setting .row { display: flex; justify-content: space-between; align-items: baseline; }
+  .setting label { font-size: .78rem; color: var(--text); }
+  .setting output { font-size: .78rem; color: var(--cyan); font-variant-numeric: tabular-nums; }
+  .setting input[type=range] { width: 100%; accent-color: #4ce7ff; margin-top: .15rem; }
+  .setting .note { font-size: .68rem; color: #6f7a8d; }
+  #settings-wrap[hidden] { display: none; }
+  .applied { color: var(--lime); font-size: .74rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% if not model.ready %}
+<div class="panel" style="border-color:rgba(255,190,60,.55);margin-bottom:1rem">
+  <h2 style="color:var(--amber)">Detection model not loaded</h2>
+  <p style="font-size:.84rem;color:var(--text);margin:.2rem 0 .5rem">{{ model.detail }}</p>
+  <p style="font-size:.8rem;color:var(--dim);margin:0">
+    Ultralytics normally downloads COCO-pretrained weights on first use, into the
+    git-ignored <code>models/</code> folder. If that failed, check your internet
+    connection and that the dependencies are installed:
+  </p>
+  <pre class="code" style="margin-top:.5rem;font-size:.72rem;background:#06050b;border:1px solid var(--edge);border-radius:6px;padding:.6rem;overflow-x:auto">pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+pip install -r requirements.txt
+.venv/bin/python -m demos.scavenger_hunt.web            # downloads yolo26n.pt</pre>
+</div>
+{% endif %}
+
+<div class="layout">
+  <div>
+    <div class="stage hunt" id="stage">
+      <video id="cam" playsinline muted></video>
+      <canvas id="overlay" aria-label="Detection boxes"></canvas>
+      <div class="timer-bar" id="timer-bar" style="width:0"></div>
+      <div class="countdown" id="countdown"></div>
+      <div class="prompt" id="prompt">
+        <div class="bring" id="bring">Bring me</div>
+        <div class="item" id="item">PRESS START</div>
+        <div class="hint" id="hint"></div>
+      </div>
+      <div class="hold" id="hold" hidden><i id="hold-fill"></i></div>
+      <div class="score-badge"><b id="score">0</b><span>points</span></div>
+    </div>
+    <div class="status" id="status">ready</div>
+  </div>
+
+  <aside>
+    <div class="panel">
+      <h2>Game</h2>
+      <div class="button-row">
+        <button id="btn-start" type="button">Start hunt</button>
+        <button id="btn-skip" type="button">Skip item</button>
+        <label class="button" for="file">Upload a photo
+          <input id="file" type="file" accept="image/*" hidden>
+        </label>
+      </div>
+      <dl class="readout" style="margin-top:.7rem">
+        <dt>Round</dt><dd id="r-round">&mdash;</dd>
+        <dt>Found</dt><dd id="r-found">0</dd>
+        <dt>Streak</dt><dd id="r-streak">0</dd>
+        <dt>Detector</dt><dd id="r-backend">{{ model.name }}</dd>
+        <dt>Pass at</dt><dd id="r-conf">&mdash;</dd>
+      </dl>
+      <div class="rounds" id="rounds" style="margin-top:.6rem"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Settings</h2>
+      <div class="button-row">
+        <button id="btn-settings" type="button" aria-expanded="false" aria-controls="settings-wrap">
+          Reveal settings
+        </button>
+        <button id="btn-defaults" type="button">Defaults</button>
+      </div>
+      <div id="settings-wrap" hidden>
+        <div class="setting">
+          <div class="row">
+            <label for="set-time">Round timer</label>
+            <output id="out-time"></output>
+          </div>
+          <input type="range" id="set-time"
+                 min="{{ bounds.roundSeconds[0] }}" max="{{ bounds.roundSeconds[1] }}"
+                 step="{{ bounds.roundSeconds[2] }}" value="{{ defaults.roundSeconds }}">
+          <span class="note">Applies from the next round.</span>
+        </div>
+
+        <div class="setting">
+          <div class="row">
+            <label for="set-conf">Confidence to pass</label>
+            <output id="out-conf"></output>
+          </div>
+          <input type="range" id="set-conf"
+                 min="{{ bounds.confidence[0] }}" max="{{ bounds.confidence[1] }}"
+                 step="{{ bounds.confidence[2] }}" value="{{ defaults.confidence }}">
+          <span class="note">
+            How sure the model must be. Lower is easier and lets more false
+            positives through; higher demands a clearer view of the object.
+          </span>
+        </div>
+
+        <div class="setting">
+          <div class="row">
+            <label for="set-rounds">Rounds per game</label>
+            <output id="out-rounds"></output>
+          </div>
+          <input type="range" id="set-rounds"
+                 min="{{ bounds.rounds[0] }}" max="{{ bounds.rounds[1] }}"
+                 step="{{ bounds.rounds[2] }}" value="{{ defaults.rounds }}">
+          <span class="note">Takes effect on the next game.</span>
+        </div>
+
+        <div class="setting">
+          <div class="row">
+            <label for="set-hold">Hold time</label>
+            <output id="out-hold"></output>
+          </div>
+          <input type="range" id="set-hold"
+                 min="{{ bounds.holdSeconds[0] }}" max="{{ bounds.holdSeconds[1] }}"
+                 step="{{ bounds.holdSeconds[2] }}" value="{{ defaults.holdSeconds }}">
+          <span class="note">
+            How long the item must stay visible before it counts. Stops one lucky
+            frame from winning a round; set to 0 to score instantly.
+          </span>
+        </div>
+        <p id="applied-note" class="applied"></p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Results</h2>
+      <ul class="help" id="results"><li>No rounds played yet.</li></ul>
+      <div class="button-row" style="margin-top:.5rem">
+        <a class="button" id="btn-snap" href="#" download>Scoreboard PNG</a>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>What it can find</h2>
+      <p style="font-size:.78rem;color:var(--dim);margin:.1rem 0 .4rem">
+        {{ rounds }} rounds, {{ round_seconds | int }}s each, detected by
+        <b>{{ model.detail }}</b>. Targets come from the COCO classes you are likely
+        to have at a desk:
+      </p>
+      <ul class="items">
+        {% for item in items %}<li>{{ item }}</li>{% endfor %}
+      </ul>
+    </div>
+  </aside>
+</div>
+{% endblock %}
+
+{% block script %}
+const BASE = {{ base_path | tojson }};
+const MODEL_READY = {{ model.ready | tojson }};
+const SID = (crypto.randomUUID && crypto.randomUUID()) || String(Date.now());
+/** YOLO runs on the server, so we post frames instead of streaming landmarks.
+ *  4 fps is enough for a 30 second hunt and keeps CPU inference comfortable. */
+const FRAME_INTERVAL_MS = 250;
+const JPEG_QUALITY = 0.6;
+
+const el = (id) => document.getElementById(id);
+const video = el('cam');
+const canvas = el('overlay');
+const ctx = canvas.getContext('2d');
+let inFlight = false;
+let latest = null;
+let sending = false;
+
+function fit() {
+  const rect = canvas.getBoundingClientRect();
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.round(rect.width * ratio));
+  canvas.height = Math.max(1, Math.round(rect.height * ratio));
+}
+fit();
+window.addEventListener('resize', fit);
+
+const setStatus = (message, error = false) => {
+  el('status').innerHTML = error ? `<span class="error">${message}</span>` : message;
+};
+
+function drawBoxes(state) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  (state.detections || []).forEach((detection) => {
+    const [x1, y1, x2, y2] = detection.box;
+    const isTarget = detection.label === state.target;
+    const x = x1 * canvas.width, y = y1 * canvas.height;
+    const w = (x2 - x1) * canvas.width, h = (y2 - y1) * canvas.height;
+
+    ctx.lineWidth = isTarget ? 4 : 2;
+    ctx.strokeStyle = isTarget ? '#8cff8c' : 'rgba(135,146,168,.8)';
+    ctx.strokeRect(x, y, w, h);
+
+    const label = `${detection.label} ${Math.round(detection.confidence * 100)}%`;
+    ctx.font = `${Math.round(canvas.height * 0.03)}px system-ui, sans-serif`;
+    const metrics = ctx.measureText(label);
+    ctx.fillStyle = isTarget ? 'rgba(20,60,25,.85)' : 'rgba(10,8,16,.8)';
+    ctx.fillRect(x, Math.max(0, y - canvas.height * 0.038), metrics.width + 12, canvas.height * 0.038);
+    ctx.fillStyle = isTarget ? '#8cff8c' : '#c9d3e4';
+    ctx.fillText(label, x + 6, Math.max(canvas.height * 0.028, y - canvas.height * 0.01));
+  });
+}
+
+function renderRounds(state) {
+  const wrap = el('rounds');
+  wrap.textContent = '';
+  for (let index = 0; index < state.rounds; index += 1) {
+    const cell = document.createElement('span');
+    const result = state.results[index];
+    cell.textContent = index + 1;
+    if (result) cell.className = result.found ? 'ok' : 'miss';
+    else if (index === state.roundIndex && state.phase !== 'idle') cell.className = 'now';
+    wrap.append(cell);
+  }
+}
+
+function renderResults(state) {
+  const list = el('results');
+  list.textContent = '';
+  if (!state.results.length) {
+    list.innerHTML = '<li>No rounds played yet.</li>';
+    return;
+  }
+  state.results.forEach((result) => {
+    const item = document.createElement('li');
+    item.innerHTML = result.found
+      ? `<b>${result.item}</b> in ${result.seconds.toFixed(1)}s &middot; ${result.points} pts`
+      : `<b>${result.item}</b> &mdash; missed`;
+    item.style.color = result.found ? 'var(--lime)' : 'var(--magenta)';
+    list.append(item);
+  });
+}
+
+function apply(state) {
+  if (!state || !state.phase) return;
+  latest = state;
+  drawBoxes(state);
+
+  const prompt = el('prompt');
+  prompt.className = `prompt ${state.phase}`;
+  el('bring').textContent = state.phase === 'playing' ? 'Bring me' : '';
+  el('item').textContent = state.phase === 'playing' ? (state.target || '').toUpperCase() : state.prompt;
+  el('hint').textContent = state.phase === 'playing' && state.hint ? `(${state.hint})` : '';
+
+  const fraction = state.phase === 'playing' ? state.timeLeft / state.roundSeconds : 0;
+  const bar = el('timer-bar');
+  bar.style.width = `${fraction * 100}%`;
+  bar.style.background = fraction > 0.5 ? '#8cff8c' : fraction > 0.2 ? '#ffbe3c' : '#ff4d6d';
+  const countdown = el('countdown');
+  countdown.textContent = state.phase === 'playing' ? `${state.timeLeft.toFixed(1)}s` : '';
+  countdown.style.color = bar.style.background;
+
+  el('hold').hidden = !(state.holdProgress > 0);
+  el('hold-fill').style.width = `${(state.holdProgress || 0) * 100}%`;
+
+  el('score').textContent = state.score;
+  el('r-round').textContent = state.phase === 'idle'
+    ? '—' : `${Math.min(state.roundIndex + 1, state.rounds)} / ${state.rounds}`;
+  el('r-found').textContent = state.foundCount;
+  el('r-streak').textContent = state.streak;
+  if (state.settings) {
+    el('r-conf').textContent = `${Math.round(state.settings.confidence * 100)}% conf`;
+  }
+  el('btn-snap').href = `${BASE}/snapshot?sid=${SID}`;
+  el('btn-skip').disabled = state.phase !== 'playing';
+  el('btn-start').textContent = state.phase === 'idle' ? 'Start hunt' : 'Restart';
+  renderRounds(state);
+  renderResults(state);
+
+  if (state.phase === 'finished') {
+    setStatus(`Game over — ${state.foundCount} of ${state.rounds} found, ${state.score} points.`);
+  }
+}
+
+async function command(name) {
+  const response = await fetch(`${BASE}/command?sid=${SID}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ command: name }),
+  });
+  apply(await response.json());
+}
+
+/** Grab the current video frame as a JPEG and post it for detection. */
+async function sendFrame() {
+  if (inFlight || !video.videoWidth) return;
+  inFlight = true;
+  try {
+    const grab = document.createElement('canvas');
+    grab.width = video.videoWidth;
+    grab.height = video.videoHeight;
+    grab.getContext('2d').drawImage(video, 0, 0);
+    const blob = await new Promise((resolve) => grab.toBlob(resolve, 'image/jpeg', JPEG_QUALITY));
+    const form = new FormData();
+    form.append('frame', blob, 'frame.jpg');
+    const response = await fetch(`${BASE}/frame?sid=${SID}`, { method: 'POST', body: form });
+    apply(await response.json());
+  } catch (err) {
+    setStatus(`detection failed: ${err.message}`, true);
+  } finally {
+    inFlight = false;
+  }
+}
+
+el('btn-start').addEventListener('click', () => command('start'));
+el('btn-skip').addEventListener('click', () => command('skip'));
+
+// -- settings ---------------------------------------------------------------
+const SETTINGS = [
+  ['set-time', 'out-time', 'roundSeconds', (v) => `${Number(v).toFixed(0)}s`],
+  ['set-conf', 'out-conf', 'confidence', (v) => `${Math.round(Number(v) * 100)}%`],
+  ['set-rounds', 'out-rounds', 'rounds', (v) => `${Number(v).toFixed(0)}`],
+  ['set-hold', 'out-hold', 'holdSeconds', (v) => `${Number(v).toFixed(1)}s`],
+];
+const DEFAULT_SETTINGS = {{ defaults | tojson }};
+
+function showSettingValues() {
+  SETTINGS.forEach(([inputId, outId, , format]) => {
+    el(outId).textContent = format(el(inputId).value);
+  });
+}
+
+/** Send the sliders to the server, which clamps and reports what it applied. */
+async function pushSettings() {
+  const payload = {};
+  SETTINGS.forEach(([inputId, , key]) => { payload[key] = Number(el(inputId).value); });
+  const response = await fetch(`${BASE}/settings?sid=${SID}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const body = await response.json();
+  apply(body);
+  // Reflect the clamped values, so the sliders cannot drift from the server.
+  syncSettingsFrom(body.settings);
+  el('applied-note').textContent = 'saved';
+  setTimeout(() => { el('applied-note').textContent = ''; }, 1200);
+}
+
+function syncSettingsFrom(settings) {
+  if (!settings) return;
+  SETTINGS.forEach(([inputId, , key]) => {
+    if (settings[key] !== undefined) el(inputId).value = settings[key];
+  });
+  showSettingValues();
+}
+
+SETTINGS.forEach(([inputId]) => {
+  const input = el(inputId);
+  input.addEventListener('input', showSettingValues);
+  input.addEventListener('change', pushSettings);
+});
+
+el('btn-settings').addEventListener('click', (event) => {
+  const wrap = el('settings-wrap');
+  wrap.hidden = !wrap.hidden;
+  event.currentTarget.textContent = wrap.hidden ? 'Reveal settings' : 'Hide settings';
+  event.currentTarget.setAttribute('aria-expanded', String(!wrap.hidden));
+});
+
+el('btn-defaults').addEventListener('click', () => {
+  syncSettingsFrom(DEFAULT_SETTINGS);
+  pushSettings();
+});
+
+showSettingValues();
+
+el('file').addEventListener('change', async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  setStatus('checking your photo&hellip;');
+  const form = new FormData();
+  form.append('image', file);
+  const response = await fetch(`${BASE}/upload?sid=${SID}`, { method: 'POST', body: form });
+  const body = await response.json();
+  if (body.ok) {
+    apply(body);
+    setStatus(body.match ? 'found it in your photo!' : 'that photo did not contain the item');
+  } else {
+    setStatus(body.error || 'upload failed', true);
+  }
+});
+
+async function startCamera() {
+  try {
+    video.srcObject = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1280 }, facingMode: 'environment' },
+      audio: false,
+    });
+    await video.play();
+    setStatus(MODEL_READY
+      ? 'camera ready — press Start hunt'
+      : 'camera ready, but no model is loaded: detection will find nothing');
+    sending = true;
+    setInterval(() => { if (sending) sendFrame(); }, FRAME_INTERVAL_MS);
+  } catch (err) {
+    setStatus(`camera unavailable: ${err.message}. You can still upload photos.`, true);
+  }
+}
+
+fetch(`${BASE}/state?sid=${SID}`)
+  .then((r) => r.json())
+  .then((state) => { apply(state); syncSettingsFrom(state.settings); });
+startCamera();
+{% endblock %}

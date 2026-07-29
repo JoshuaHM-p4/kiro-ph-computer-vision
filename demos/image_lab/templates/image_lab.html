@@ -1,0 +1,414 @@
+{% extends "base.html" %}
+{% block title %}Image Lab{% endblock %}
+{% block heading %}Image Lab{% endblock %}
+{% block tagline %}chain OpenCV operations, then reveal the code{% endblock %}
+
+{% block head %}
+<style>
+  .lab { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 1.25rem; align-items: start; }
+  @media (max-width: 1000px) { .lab { grid-template-columns: 1fr; } }
+
+  .viewer { border: 1px solid var(--edge); border-radius: 10px; background: #07060d; padding: .75rem; }
+  .viewer img { width: 100%; display: block; border-radius: 6px; background: #000; }
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+  .compare.single { grid-template-columns: 1fr; }
+  .compare figure { margin: 0; }
+  .compare figcaption {
+    font-size: .7rem; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--dim); margin-bottom: .35rem;
+  }
+
+  .steps { list-style: none; margin: 0; padding: 0; }
+  .step {
+    border: 1px solid var(--edge); border-radius: 8px; padding: .6rem .7rem;
+    margin-bottom: .6rem; background: rgba(0,0,0,.25);
+  }
+  .step.disabled { opacity: .45; }
+  .step-head { display: flex; align-items: center; gap: .4rem; }
+  .step-head strong { font-size: .85rem; flex: 1; }
+  .step-head button { padding: .1rem .4rem; font-size: .78rem; }
+  .step .docs { font-size: .7rem; color: var(--cyan); font-family: ui-monospace, monospace; }
+  .step .summary { font-size: .74rem; color: var(--dim); margin: .3rem 0 .1rem; }
+
+  .param { display: grid; grid-template-columns: 1fr auto; gap: .2rem .5rem; align-items: center; margin-top: .45rem; }
+  .param label { font-size: .74rem; color: var(--dim); }
+  .param output { font-size: .74rem; color: var(--cyan); font-variant-numeric: tabular-nums; }
+  .param input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: #4ce7ff; }
+  .param select, .param input[type=color] { grid-column: 1 / -1; width: 100%; background: #12101c; color: var(--text); border: 1px solid var(--edge); border-radius: 5px; padding: .25rem; }
+  .param.inline { grid-template-columns: auto 1fr; }
+  .param .hint { grid-column: 1 / -1; font-size: .68rem; color: #6f7a8d; }
+
+  pre.code {
+    margin: 0; padding: .8rem; border-radius: 8px; overflow-x: auto;
+    background: #06050b; border: 1px solid var(--edge);
+    font-family: ui-monospace, "Cascadia Code", monospace; font-size: .76rem; line-height: 1.5;
+    color: #d6e6ff; max-height: 460px;
+  }
+  pre.code .cm { color: #6f7a8d; }
+  pre.code .fn { color: #4ce7ff; }
+  pre.code .st { color: #8cff8c; }
+  pre.code .nm { color: #ffbe3c; }
+  .code-wrap[hidden] { display: none; }
+  select.picker { width: 100%; background: #12101c; color: var(--text); border: 1px solid var(--edge); border-radius: 6px; padding: .4rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="lab">
+  <div>
+    <div class="viewer">
+      <div class="compare" id="compare">
+        <figure>
+          <figcaption>Source &mdash; <span id="src-name">&mdash;</span> <span id="src-size"></span></figcaption>
+          <img id="src-img" alt="Source image">
+        </figure>
+        <figure>
+          <figcaption>Result &mdash; <span id="step-count">0</span> operations</figcaption>
+          <img id="out-img" alt="Processed result">
+        </figure>
+      </div>
+    </div>
+    <div class="status" id="status">ready</div>
+
+    <div class="panel" style="margin-top:1rem">
+      <h2>Equivalent code</h2>
+      <div class="button-row" style="margin-bottom:.6rem">
+        <button id="btn-reveal" type="button">Reveal code</button>
+        <button id="btn-copy" type="button">Copy</button>
+        <a class="button" id="btn-download-code" href="#">Download .py</a>
+        <a class="button" id="btn-download-img" href="#">Download PNG</a>
+      </div>
+      <div class="code-wrap" id="code-wrap" hidden>
+        <pre class="code" id="code"></pre>
+        <p style="font-size:.74rem;color:var(--dim);margin:.5rem 0 0">
+          Parameters are the ones above, so this script reproduces exactly what you see.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <aside>
+    <div class="panel">
+      <h2>Image</h2>
+      <div class="button-row">
+        <label class="button" for="file">Upload&hellip;
+          <input id="file" type="file" accept="image/*" hidden>
+        </label>
+        <button id="btn-webcam" type="button">Webcam frame</button>
+        <button id="btn-toggle-src" type="button">Hide source</button>
+      </div>
+      <select class="picker" id="sample" style="margin-top:.5rem" aria-label="Sample image">
+        {% for name in samples %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
+      </select>
+      <video id="cam" playsinline muted hidden></video>
+    </div>
+
+    <div class="panel">
+      <h2>Add operation</h2>
+      <select class="picker" id="op-picker" aria-label="Operation to add">
+        {% for group in catalog %}
+          <optgroup label="{{ group.category }}">
+            {% for op in group.operations %}
+              <option value="{{ op.key }}">{{ op.label }}</option>
+            {% endfor %}
+          </optgroup>
+        {% endfor %}
+      </select>
+      <div class="button-row" style="margin-top:.5rem">
+        <button id="btn-add" type="button">Add step</button>
+        <button id="btn-clear" type="button">Clear</button>
+        <button id="btn-default" type="button">Default</button>
+      </div>
+      <p style="font-size:.72rem;color:var(--dim);margin:.5rem 0 0">
+        Up to {{ max_steps }} steps, applied top to bottom.
+      </p>
+    </div>
+
+    <div class="panel">
+      <h2>Pipeline</h2>
+      <ul class="steps" id="steps"></ul>
+      <p id="empty-note" style="font-size:.76rem;color:var(--dim)">No operations yet.</p>
+    </div>
+  </aside>
+</div>
+{% endblock %}
+
+{% block script %}
+const BASE = {{ base_path | tojson }};
+const CATALOG = {{ catalog | tojson }};
+const SID = (crypto.randomUUID && crypto.randomUUID()) || String(Date.now());
+
+const OPS = {};
+CATALOG.forEach((group) => group.operations.forEach((op) => { OPS[op.key] = op; }));
+
+let steps = [];
+let revision = 0;
+const el = (id) => document.getElementById(id);
+const setStatus = (message, isError = false) => {
+  el('status').innerHTML = isError ? `<span class="error">${message}</span>` : message;
+};
+
+/** BGR triple <-> #rrggbb, since cv2 colours are BGR but <input type=color> is RGB. */
+const bgrToHex = ([b, g, r]) =>
+  '#' + [r, g, b].map((c) => Math.max(0, Math.min(255, c | 0)).toString(16).padStart(2, '0')).join('');
+const hexToBgr = (hex) => {
+  const value = parseInt(hex.slice(1), 16);
+  return [value & 255, (value >> 8) & 255, (value >> 16) & 255];
+};
+
+async function post(path, body) {
+  const response = await fetch(`${BASE}${path}?sid=${SID}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  return response.json();
+}
+
+function applyState(state) {
+  if (!state) return;
+  steps = state.steps || [];
+  revision = state.revision;
+  el('src-name').textContent = state.sourceName || 'none';
+  el('src-size').textContent = state.sourceSize.width
+    ? `${state.sourceSize.width}x${state.sourceSize.height}`
+    : '';
+  el('step-count').textContent = steps.filter((s) => s.enabled).length;
+  el('src-img').src = `${BASE}/source.png?sid=${SID}&v=${revision}`;
+  el('out-img').src = `${BASE}/result.png?sid=${SID}&v=${revision}&p=${Date.now()}`;
+  el('btn-download-code').href = `${BASE}/code?sid=${SID}`;
+  el('btn-download-img').href = `${BASE}/snapshot?sid=${SID}`;
+  renderSteps();
+  renderCode(state.code);
+  setStatus(state.error || 'ready', Boolean(state.error));
+}
+
+/** Push the current pipeline and repaint from the server's answer. */
+async function sync() {
+  applyState(await post('/pipeline', {
+    steps: steps.map((s) => ({ key: s.key, params: s.params, enabled: s.enabled })),
+  }));
+}
+
+function paramControl(step, index, schema) {
+  const wrap = document.createElement('div');
+  wrap.className = 'param' + (schema.kind === 'bool' ? ' inline' : '');
+  const value = step.params[schema.key];
+
+  if (schema.kind === 'bool') {
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = Boolean(value);
+    input.id = `p-${index}-${schema.key}`;
+    input.addEventListener('change', () => {
+      step.params[schema.key] = input.checked;
+      sync();
+    });
+    const label = document.createElement('label');
+    label.htmlFor = input.id;
+    label.textContent = schema.label;
+    wrap.append(input, label);
+  } else if (schema.kind === 'choice') {
+    const label = document.createElement('label');
+    label.textContent = schema.label;
+    const select = document.createElement('select');
+    schema.choices.forEach((choice) => {
+      const option = document.createElement('option');
+      option.value = choice;
+      option.textContent = choice;
+      option.selected = choice === value;
+      select.append(option);
+    });
+    select.addEventListener('change', () => {
+      step.params[schema.key] = select.value;
+      sync();
+    });
+    wrap.append(label, document.createElement('span'), select);
+  } else if (schema.kind === 'color') {
+    const label = document.createElement('label');
+    label.textContent = schema.label;
+    const input = document.createElement('input');
+    input.type = 'color';
+    input.value = bgrToHex(value);
+    input.addEventListener('change', () => {
+      step.params[schema.key] = hexToBgr(input.value);
+      sync();
+    });
+    wrap.append(label, document.createElement('span'), input);
+  } else {
+    const label = document.createElement('label');
+    label.textContent = schema.label;
+    const readout = document.createElement('output');
+    readout.textContent = value;
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.min = schema.min;
+    input.max = schema.max;
+    input.step = schema.oddOnly ? Math.max(2, schema.step) : schema.step;
+    input.value = value;
+    input.addEventListener('input', () => { readout.textContent = input.value; });
+    input.addEventListener('change', () => {
+      step.params[schema.key] = Number(input.value);
+      sync();
+    });
+    wrap.append(label, readout, input);
+  }
+
+  if (schema.help) {
+    const hint = document.createElement('span');
+    hint.className = 'hint';
+    hint.textContent = schema.help;
+    wrap.append(hint);
+  }
+  return wrap;
+}
+
+function renderSteps() {
+  const list = el('steps');
+  list.textContent = '';
+  el('empty-note').hidden = steps.length > 0;
+
+  steps.forEach((step, index) => {
+    const item = document.createElement('li');
+    item.className = 'step' + (step.enabled ? '' : ' disabled');
+
+    const head = document.createElement('div');
+    head.className = 'step-head';
+
+    const toggle = document.createElement('input');
+    toggle.type = 'checkbox';
+    toggle.checked = step.enabled;
+    toggle.title = 'Enable or skip this step';
+    toggle.addEventListener('change', () => { step.enabled = toggle.checked; sync(); });
+
+    const title = document.createElement('strong');
+    title.textContent = `${index + 1}. ${step.label}`;
+
+    const up = document.createElement('button');
+    up.type = 'button';
+    up.textContent = '\u2191';
+    up.title = 'Move earlier';
+    up.disabled = index === 0;
+    up.addEventListener('click', () => {
+      steps.splice(index - 1, 0, steps.splice(index, 1)[0]);
+      sync();
+    });
+
+    const down = document.createElement('button');
+    down.type = 'button';
+    down.textContent = '\u2193';
+    down.title = 'Move later';
+    down.disabled = index === steps.length - 1;
+    down.addEventListener('click', () => {
+      steps.splice(index + 1, 0, steps.splice(index, 1)[0]);
+      sync();
+    });
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = '\u00d7';
+    remove.title = 'Remove';
+    remove.addEventListener('click', () => { steps.splice(index, 1); sync(); });
+
+    head.append(toggle, title, up, down, remove);
+
+    const docs = document.createElement('div');
+    docs.className = 'docs';
+    docs.textContent = `cv2.${step.docs}`;
+
+    const summary = document.createElement('p');
+    summary.className = 'summary';
+    summary.textContent = step.summary;
+
+    item.append(head, docs, summary);
+    (step.schema || []).forEach((schema) => item.append(paramControl(step, index, schema)));
+    list.append(item);
+  });
+}
+
+/** Minimal syntax highlight: comments, strings, cv2 calls, numbers. */
+function renderCode(code) {
+  const escaped = (code || '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  el('code').innerHTML = escaped
+    .replace(/(#.*)$/gm, '<span class="cm">$1</span>')
+    .replace(/('[^']*'|"[^"]*")/g, '<span class="st">$1</span>')
+    .replace(/\b(cv2\.[A-Za-z_0-9]+)/g, '<span class="fn">$1</span>')
+    .replace(/\b(\d+\.?\d*)\b/g, '<span class="nm">$1</span>');
+}
+
+// -- controls ---------------------------------------------------------------
+el('btn-add').addEventListener('click', () => {
+  const key = el('op-picker').value;
+  const op = OPS[key];
+  if (!op) return;
+  const params = {};
+  op.params.forEach((p) => { params[p.key] = p.default; });
+  steps.push({ key, label: op.label, docs: op.docs, summary: op.summary, enabled: true, params, schema: op.params });
+  sync();
+});
+
+el('btn-clear').addEventListener('click', async () => applyState(await post('/command', { command: 'clear' })));
+el('btn-default').addEventListener('click', async () => applyState(await post('/command', { command: 'reset' })));
+
+el('sample').addEventListener('change', async (event) => {
+  applyState(await post('/command', { command: 'sample', payload: { name: event.target.value } }));
+});
+
+el('file').addEventListener('change', async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  setStatus('uploading&hellip;');
+  const form = new FormData();
+  form.append('image', file);
+  const response = await fetch(`${BASE}/upload?sid=${SID}`, { method: 'POST', body: form });
+  const body = await response.json();
+  if (body.ok) applyState(body); else setStatus(body.error || 'upload failed', true);
+});
+
+el('btn-toggle-src').addEventListener('click', (event) => {
+  const compare = el('compare');
+  const single = compare.classList.toggle('single');
+  compare.firstElementChild.hidden = single;
+  event.currentTarget.textContent = single ? 'Show source' : 'Hide source';
+});
+
+el('btn-reveal').addEventListener('click', (event) => {
+  const wrap = el('code-wrap');
+  wrap.hidden = !wrap.hidden;
+  event.currentTarget.textContent = wrap.hidden ? 'Reveal code' : 'Hide code';
+});
+
+el('btn-copy').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(el('code').textContent);
+    setStatus('code copied to the clipboard');
+  } catch (err) {
+    setStatus('clipboard blocked by the browser', true);
+  }
+});
+
+/** Grab a single webcam frame and upload it, so the lab works on live input too. */
+el('btn-webcam').addEventListener('click', async () => {
+  const video = el('cam');
+  try {
+    setStatus('opening camera&hellip;');
+    if (!video.srcObject) {
+      video.srcObject = await navigator.mediaDevices.getUserMedia({ video: { width: 1280 } });
+      await video.play();
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+    const form = new FormData();
+    form.append('image', blob, 'webcam.png');
+    const response = await fetch(`${BASE}/upload?sid=${SID}`, { method: 'POST', body: form });
+    applyState(await response.json());
+  } catch (err) {
+    setStatus(`camera unavailable: ${err.message}`, true);
+  }
+});
+
+fetch(`${BASE}/state?sid=${SID}`).then((r) => r.json()).then(applyState);
+{% endblock %}

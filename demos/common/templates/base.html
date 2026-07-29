@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Demo{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('shared.static', filename='css/neon.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header class="hud">
+    <h1>{% block heading %}Demo{% endblock %}</h1>
+    <p>{% block tagline %}{% endblock %}</p>
+    <span class="spacer"></span>
+    <span class="pill" id="conn-pill">connecting</span>
+    <a href="/">home</a>
+  </header>
+
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+
+  <script type="module">
+    {% block script %}{% endblock %}
+  </script>
+</body>
+</html>

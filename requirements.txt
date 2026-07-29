@@ -4,5 +4,37 @@ numpy==1.26.4
 opencv-python==4.10.0.84
 mediapipe==0.10.14
 
-# The pretrained model is user-provided and NOT installed via pip.
-# Place it outside version control (see .gitignore: *.pt, *.onnx, *.tflite, models/).
+# NOTE: mediapipe depends on opencv-contrib-python without a pin, so pip also
+# installs a contrib build that provides the same `cv2` module and shadows the
+# opencv-python pin above. Pin it too so the version actually imported is
+# deliberate rather than whatever is newest on PyPI.
+opencv-contrib-python==4.10.0.84
+
+# Object detection for demos/scavenger_hunt. Ultralytics ships COCO-pretrained
+# weights and downloads them on first use, so no model file has to be supplied.
+#
+# torch arrives as an ultralytics dependency. Installing plainly from PyPI pulls
+# the CUDA build and roughly 3-5 GB of nvidia wheels; the CPU build is ~250 MB and
+# is all these demos need (see docs/PRD.md: CPU-friendly inference). Install it
+# first from PyTorch's CPU index, then this file:
+#
+#   pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+#   pip install -r requirements.txt
+#
+# Omit that first line if you want GPU acceleration and have a CUDA setup.
+ultralytics==8.4.111
+torch==2.13.0
+torchvision==0.28.0
+
+# Web layer for demos/ (the Flask apps under demos/*/web.py).
+# flask-sock is a thin WSGI-native WebSocket implementation, so it runs on the
+# plain Flask dev server without swapping in eventlet or gevent.
+flask==3.1.3
+flask-sock==0.7.0
+simple-websocket==1.1.0
+
+# Testing.
+pytest==9.1.1
+
+# Model weights are downloaded at runtime into models/, which is git-ignored.
+# Never commit weights (see AGENTS.md).

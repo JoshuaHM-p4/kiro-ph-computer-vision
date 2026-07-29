@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Landmark Channel Echo{% endblock %}
+{% block heading %}Echo{% endblock %}
+{% block tagline %}browser MediaPipe &rarr; WebSocket &rarr; Flask{% endblock %}
+
+{% block content %}
+<div class="layout">
+  <div>
+    <div class="stage">
+      <video id="cam" playsinline muted></video>
+      <canvas id="overlay" aria-label="Fingertip trail overlay"></canvas>
+    </div>
+    <div class="status" id="status">waiting for camera&hellip;</div>
+  </div>
+
+  <aside>
+    <div class="panel">
+      <h2>Readout</h2>
+      <dl class="readout">
+        <dt>Frames</dt><dd id="r-frames">0</dd>
+        <dt>Hands</dt><dd id="r-hands">0</dd>
+        <dt>Accepted</dt><dd id="r-accepted">0</dd>
+        <dt>Dropped</dt><dd id="r-dropped">0</dd>
+      </dl>
+    </div>
+    <div class="panel">
+      <h2>Actions</h2>
+      <div class="button-row">
+        <button id="btn-clear" type="button">Clear trail</button>
+        <a class="button" id="btn-snap" href="#" download>Snapshot</a>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Help</h2>
+      <ul class="help">
+        <li>Move your <b>index fingertip</b> to draw the trail.</li>
+        <li><b>Snapshot</b> renders the server-side canvas.</li>
+      </ul>
+    </div>
+  </aside>
+</div>
+{% endblock %}
+
+{% block script %}
+import { LandmarkStream, bindStatusUi, fitCanvas }
+  from "{{ url_for('shared.static', filename='js/landmark-stream.js') }}";
+
+const video = document.getElementById('cam');
+const canvas = document.getElementById('overlay');
+const ctx = canvas.getContext('2d');
+fitCanvas(canvas);
+
+const setText = (id, value) => { document.getElementById(id).textContent = value; };
+
+function draw(state) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const trail = state.trail || [];
+  if (trail.length > 1) {
+    ctx.strokeStyle = '#4ce7ff';
+    ctx.lineWidth = 4;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    trail.forEach((p, i) => {
+      const x = p.x * canvas.width, y = p.y * canvas.height;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+  if (state.point) {
+    ctx.fillStyle = '#8cff8c';
+    ctx.beginPath();
+    ctx.arc(state.point.x * canvas.width, state.point.y * canvas.height, 10, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  setText('r-frames', state.frames ?? 0);
+  setText('r-hands', state.hands ?? 0);
+  setText('r-accepted', state._meta?.accepted ?? 0);
+  setText('r-dropped', state._meta?.dropped ?? 0);
+}
+
+const stream = new LandmarkStream({
+  video,
+  basePath: '/echo',
+  need: { hands: true },
+  numHands: 1,
+  onState: draw,
+  onStatus: bindStatusUi('conn-pill', 'status'),
+});
+
+document.getElementById('btn-clear')
+  .addEventListener('click', () => stream.sendCommand('clear'));
+document.getElementById('btn-snap')
+  .addEventListener('click', (e) => { e.target.href = stream.snapshotUrl(); });
+
+stream.start().catch((err) => {
+  document.getElementById('status').innerHTML =
+    `<span class="error">${err.message}</span> &mdash; camera permission and internet access are required.`;
+});
+{% endblock %}
