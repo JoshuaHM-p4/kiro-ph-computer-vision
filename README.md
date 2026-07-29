@@ -1,20 +1,17 @@
 # kiro-computer-vision
 
-👁️ 𝐊𝐢𝐫𝐨𝐯𝐞𝐫𝐬𝐞 𝐖𝐞𝐞𝐤 𝟕: 𝐁𝐮𝐢𝐥𝐝 𝐍𝐢𝐠𝐡𝐭𝐬: 𝐂𝐨𝐦𝐩𝐮𝐭𝐞𝐫 𝐕𝐢𝐬𝐢𝐨𝐧 𝐀𝐩𝐩𝐥𝐢𝐜𝐚𝐭𝐢𝐨𝐧𝐬 𝐰𝐢𝐭𝐡 𝐊𝐢𝐫𝐨
+## Kiroverse Week 7: Build Nights — Computer Vision Applications with Kiro
 
 Building on what we've covered, it's time to build a computer vision app powered by Kiro! In this intermediate module, we are diving into image and video stream processing using Python and OpenCV.
 
 From setting up image preprocessing pipelines to integrating real-time object detection models, you will learn how to guide Kiro's AI agents to write clean vision code and handle complex dependencies.
 
-🚀 𝐓𝐡𝐞 𝐀𝐠𝐞𝐧𝐝𝐚:
+### 🚀 The Agenda
 
-🧠 𝐅𝐨𝐮𝐧𝐝𝐚𝐭𝐢𝐨𝐧𝐬: Understand key computer vision concepts, model architectures, and image processing basics.
-
-🤖 𝐌𝐨𝐝𝐞𝐥 𝐈𝐧𝐭𝐞𝐠𝐫𝐚𝐭𝐢𝐨𝐧: Build & run object detection and classification models using OpenCV.
-
-📑 𝐇𝐚𝐧𝐝𝐬-𝐎𝐧 𝐁𝐮𝐢𝐥𝐝𝐢𝐧𝐠: Work together with Kiro to build a vision app, write preprocessing scripts, and run live inference.
-
-💡 𝐏𝐫𝐨𝐣𝐞𝐜𝐭 𝐒𝐡𝐨𝐰𝐜𝐚𝐬𝐞 & 𝐐&𝐀 : Present your computer vision project, ask questions, debug your code, and get feedback from facilitators.
+- 🧠 **Foundations:** Understand key computer vision concepts, model architectures, and image processing basics.
+- 🤖 **Model Integration:** Build & run object detection and classification models using OpenCV.
+- 📑 **Hands-On Building:** Work together with Kiro to build a vision app, write preprocessing scripts, and run live inference.
+- 💡 **Project Showcase & Q&A:** Present your computer vision project, ask questions, debug your code, and get feedback from facilitators.
 
 ---
 
