@@ -1,0 +1,8 @@
+# Core computer vision stack.
+# Pins chosen for known mutual compatibility; bump deliberately and re-test.
+numpy==1.26.4
+opencv-python==4.10.0.84
+mediapipe==0.10.14
+
+# The pretrained model is user-provided and NOT installed via pip.
+# Place it outside version control (see .gitignore: *.pt, *.onnx, *.tflite, models/).

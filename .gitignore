@@ -1,0 +1,74 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ---- Virtual environments ----
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# ---- Environment / secrets ----
+.env
+.env.*
+*.local
+
+# ---- Test / coverage / type-check caches ----
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# ---- Jupyter ----
+.ipynb_checkpoints/
+
+# ---- Model weights / large binaries (user-provided) ----
+*.pt
+*.pth
+*.onnx
+*.tflite
+*.pb
+*.h5
+*.caffemodel
+*.weights
+*.bin
+models/
+
+# ---- Media artifacts (generated output) ----
+outputs/
+*.avi
+*.mp4.tmp
+
+# ---- IDE / editor ----
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
+desktop.ini
