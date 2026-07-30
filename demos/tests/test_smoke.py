@@ -66,8 +66,8 @@ def test_demo_registry_is_complete():
         "six-seven",
         "pngtuber",
         "scavenger-hunt",
+        "sam-labeler",
     }
     ports = [demo.port for demo in DEMOS]
     assert len(set(ports)) == len(DEMOS), "each demo needs its own port"
     assert DEMOS[0].slug == "image-lab", "the OpenCV primer comes first"
-    assert DEMOS[-1].slug == "scavenger-hunt", "the game comes last"

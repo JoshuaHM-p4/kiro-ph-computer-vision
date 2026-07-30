@@ -107,4 +107,16 @@ DEMOS: tuple[DemoInfo, ...] = (
         port=5006,
         module="demos.scavenger_hunt",
     ),
+    DemoInfo(
+        slug="sam-labeler",
+        title="SAM Labeler",
+        tagline="Segment anything you can name",
+        description=(
+            "Capture or upload a picture, type what to look for in plain words, and SAM 3.1 "
+            "returns masks. Then style each label with OpenCV: fill, outline, blur, pixelate, "
+            "spotlight or cutout. Needs a Hugging Face token, or run it in demo mode."
+        ),
+        port=5007,
+        module="demos.sam_labeler",
+    ),
 )

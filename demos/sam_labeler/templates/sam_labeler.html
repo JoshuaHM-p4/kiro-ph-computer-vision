@@ -1,0 +1,541 @@
+{% extends "base.html" %}
+{% block title %}SAM Labeler{% endblock %}
+{% block heading %}SAM Labeler{% endblock %}
+{% block tagline %}say what to find, get masks you can style{% endblock %}
+
+{% block head %}
+<style>
+  .stage.labeler { background: #07060d; }
+  .stage.labeler img.result { position: absolute; inset: 0; width: 100%; height: 100%;
+                              object-fit: contain; display: block; }
+  .stage.labeler video { position: absolute; inset: 0; width: 100%; height: 100%;
+                         object-fit: cover; display: block; }
+  .stage.labeler.live img.result { display: none; }
+  .stage.labeler:not(.live) video { display: none; }
+
+  /* ---- pipeline -------------------------------------------------------- */
+  .pipeline { display: flex; align-items: flex-start; gap: .5rem;
+              flex-wrap: wrap; margin-bottom: 1.1rem; }
+  .step-card { border: 1px solid var(--edge); border-radius: 10px; padding: .7rem .8rem;
+               background: rgba(0,0,0,.25); flex: 1 1 160px; min-width: 130px;
+               transition: border-color .15s; }
+  .step-card.active { border-color: var(--cyan); }
+  .step-card.done { border-color: rgba(140,255,140,.5); }
+  .step-card.locked { opacity: .4; pointer-events: none; }
+  .step-card h3 { margin: 0 0 .45rem; font-size: .68rem; letter-spacing: .18em;
+                  text-transform: uppercase; color: var(--dim); display: flex;
+                  align-items: center; gap: .4rem; }
+  .step-card h3 .badge { width: 1.2rem; height: 1.2rem; border-radius: 50%;
+                         display: grid; place-items: center; font-size: .62rem;
+                         font-weight: 700; border: 1px solid var(--edge);
+                         color: var(--dim); }
+  .step-card.active h3 .badge { background: var(--cyan); color: #07060d; border-color: var(--cyan); }
+  .step-card.done h3 .badge { background: rgba(140,255,140,.2); color: var(--lime);
+                               border-color: rgba(140,255,140,.5); }
+  .step-card .body { font-size: .78rem; }
+  .step-card .note { font-size: .68rem; color: var(--dim); margin: .35rem 0 0; }
+  .arrow { color: var(--dim); font-size: 1.2rem; padding-top: 1.4rem; flex: 0 0 auto; }
+
+  /* resize slider inside a step card */
+  .step-card input[type=range] { width: 100%; accent-color: #4ce7ff; margin: .3rem 0 .1rem; }
+  .step-card .row { display: flex; justify-content: space-between; }
+  .step-card label { font-size: .74rem; color: var(--dim); }
+  .step-card output { font-size: .74rem; color: var(--cyan); font-variant-numeric: tabular-nums; }
+
+  /* token area */
+  .token-row { display: flex; gap: .4rem; }
+  .token-row input { flex: 1; min-width: 0; background: #12101c; color: var(--text);
+                     border: 1px solid var(--edge); border-radius: 6px; padding: .4rem; }
+  .prompt-box { width: 100%; background: #12101c; color: var(--text); resize: vertical;
+                border: 1px solid var(--edge); border-radius: 6px; padding: .5rem;
+                font: inherit; min-height: 3.4rem; }
+  .chips { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .4rem; }
+  .chips button { font-size: .72rem; padding: .12rem .5rem; }
+  .labels { list-style: none; margin: 0; padding: 0; }
+  .labels li { border: 1px solid var(--edge); border-radius: 8px; padding: .5rem .6rem;
+               margin-bottom: .5rem; background: rgba(0,0,0,.25); }
+  .labels .top { display: flex; align-items: center; gap: .45rem; }
+  .labels .name { flex: 1; font-size: .86rem; font-weight: 600; }
+  .labels .count { font-size: .72rem; color: var(--dim); }
+  .labels input[type=color] { width: 2rem; height: 1.6rem; padding: 0; border: 1px solid var(--edge);
+                              border-radius: 4px; background: none; }
+  .labels select { background: #12101c; color: var(--text); border: 1px solid var(--edge);
+                   border-radius: 5px; padding: .18rem; font-size: .78rem; }
+  .labels li.off { opacity: .45; }
+
+  /* progress */
+  .progress { margin-top: .55rem; }
+  .progress[hidden] { display: none; }
+  .progress .track { height: 10px; border: 1px solid var(--edge); border-radius: 999px;
+                     overflow: hidden; background: rgba(0,0,0,.35); }
+  .progress .track i { display: block; height: 100%; width: 40%; background: var(--cyan); }
+  .progress.indeterminate .track i { animation: sweep 1.4s ease-in-out infinite; }
+  @keyframes sweep { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
+  .progress .line { font-size: .74rem; color: var(--dim); margin-top: .3rem; }
+  .progress .line b { color: var(--cyan); font-variant-numeric: tabular-nums; }
+
+  .warn-panel { border-color: rgba(255,190,60,.55) !important; }
+  .backend-detail { font-size: .74rem; white-space: pre-wrap; word-break: break-word;
+                    margin: .5rem 0 0; color: var(--dim); max-height: 12rem; overflow-y: auto; }
+  .backend-detail.bad { color: #ffb3c8; border-left: 2px solid var(--magenta); padding-left: .5rem; }
+
+  #settings-wrap[hidden] { display: none; }
+  .setting { margin-top: .55rem; }
+  .setting .row { display: flex; justify-content: space-between; align-items: baseline; }
+  .setting label { font-size: .76rem; color: var(--text); }
+  .setting output { font-size: .76rem; color: var(--cyan); font-variant-numeric: tabular-nums; }
+  .setting input[type=range] { width: 100%; accent-color: #4ce7ff; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="layout">
+  <div>
+    <!-- Pipeline cards -->
+    <div class="pipeline">
+      <!-- Step 1: get a picture -->
+      <div class="step-card active" id="step1">
+        <h3><span class="badge">1</span> Get a picture</h3>
+        <div class="body">
+          <div class="button-row">
+            <button id="btn-live" type="button">Open camera</button>
+            <button id="btn-capture" type="button" disabled>Capture</button>
+            <label class="button" for="file">Upload
+              <input id="file" type="file" accept="image/*" hidden>
+            </label>
+          </div>
+        </div>
+        <p class="note" id="step1-note">Aim your camera or pick a file.</p>
+      </div>
+
+      <div class="arrow">&rarr;</div>
+
+      <!-- Step 2: resize -->
+      <div class="step-card locked" id="step2">
+        <h3><span class="badge">2</span> Resize</h3>
+        <div class="body">
+          <div class="row">
+            <label for="set-maxdim">Longest edge</label>
+            <output id="out-maxdim">{{ default_dim }}px</output>
+          </div>
+          <input type="range" id="set-maxdim" data-key="maxDim"
+                 min="256" max="1280" step="128" value="{{ default_dim }}"
+                 aria-label="Longest edge in pixels">
+          <div class="button-row" style="margin-top:.45rem">
+            <button id="btn-resize" type="button" disabled>Apply resize</button>
+          </div>
+        </div>
+        <p class="note">Smaller = faster inference. SAM was trained at 1024&nbsp;px.</p>
+      </div>
+
+      <div class="arrow">&rarr;</div>
+
+      <!-- Step 3: label -->
+      <div class="step-card locked" id="step3">
+        <h3><span class="badge">3</span> Label</h3>
+        <div class="body">
+          <textarea class="prompt-box" id="prompts" rows="2"
+                    placeholder="cat, laptop, coffee mug"
+                    aria-label="What to look for"></textarea>
+          <div class="chips">
+            {% for example in examples %}
+              <button class="example" type="button" data-text="{{ example }}">+ {{ example }}</button>
+            {% endfor %}
+          </div>
+          <div class="button-row" style="margin-top:.45rem">
+            <button id="btn-run" type="button" disabled>Find them</button>
+            <button id="btn-clear" type="button" disabled>Clear</button>
+          </div>
+          <div class="progress indeterminate" id="run-progress" hidden>
+            <div class="track"><i></i></div>
+            <div class="line" id="run-line"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="arrow">&rarr;</div>
+
+      <!-- Step 4: output -->
+      <div class="step-card locked" id="step4">
+        <h3><span class="badge">4</span> Output</h3>
+        <div class="body">
+          <ul class="labels" id="labels"></ul>
+          <p id="labels-empty" style="font-size:.78rem;color:var(--dim)">No results yet.</p>
+          <div class="button-row" style="margin-top:.45rem">
+            <a class="button" id="btn-download" href="#" download>Save PNG</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Image viewer -->
+    <div class="stage labeler" id="stage">
+      <video id="cam" playsinline muted></video>
+      <img class="result" id="result" alt="Segmentation result">
+    </div>
+    <div class="status" id="status">open the camera or upload a picture to begin</div>
+  </div>
+
+  <aside>
+    <div class="panel" id="auth-panel">
+      <h2>Model access</h2>
+      <p style="font-size:.78rem;color:var(--dim);margin:.1rem 0 .5rem">
+        <code>{{ model_id }}</code> is gated. Paste a read token or use demo mode.
+        The token is held in memory only &mdash; never logged, never sent back.
+      </p>
+      {% if token_from_env %}
+        <p class="pill on" style="margin:0 0 .5rem">token found in HF_TOKEN</p>
+      {% endif %}
+      <div class="token-row">
+        <input id="token" type="password" autocomplete="off" spellcheck="false"
+               placeholder="hf_..." aria-label="Hugging Face read token">
+        <button id="btn-token" type="button">Use</button>
+      </div>
+      <label style="display:flex;gap:.4rem;align-items:center;margin-top:.55rem;font-size:.78rem">
+        <input type="checkbox" id="demo-mode">
+        Demo mode (synthetic masks, no model)
+      </label>
+      <p id="backend-note" class="backend-detail">checking&hellip;</p>
+      <div class="progress indeterminate" id="load-progress" hidden>
+        <div class="track"><i></i></div>
+        <div class="line" id="load-line"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Output settings</h2>
+      <div class="setting">
+        <div class="row"><label for="set-mode">Mode</label></div>
+        <select id="set-mode" aria-label="Output mode"
+                style="width:100%;background:#12101c;color:var(--text);border:1px solid var(--edge);border-radius:6px;padding:.3rem">
+          {% for mode in modes %}<option value="{{ mode }}">{{ mode }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="button-row" style="margin-top:.5rem">
+        <button id="btn-settings" type="button" aria-expanded="false">More settings</button>
+      </div>
+      <div id="settings-wrap" hidden>
+        {% for key, label in [('confidence','Score threshold'), ('maskThreshold','Mask threshold'),
+                              ('alpha','Fill opacity'), ('outlineThickness','Outline thickness'),
+                              ('blurStrength','Blur strength'), ('pixelSize','Pixel size')] %}
+          <div class="setting">
+            <div class="row">
+              <label for="set-{{ key }}">{{ label }}</label>
+              <output id="out-{{ key }}"></output>
+            </div>
+            <input type="range" id="set-{{ key }}" data-key="{{ key }}"
+                   min="{{ bounds[key][0] }}" max="{{ bounds[key][1] }}" step="{{ bounds[key][2] }}">
+          </div>
+        {% endfor %}
+        <p style="font-size:.68rem;color:#6f7a8d;margin:.5rem 0 0">
+          Score and mask thresholds apply on the next run; drawing settings redraw immediately.
+        </p>
+      </div>
+    </div>
+  </aside>
+</div>
+{% endblock %}
+
+{% block script %}
+const BASE = {{ base_path | tojson }};
+const EFFECTS = {{ effects | tojson }};
+const SID = (crypto.randomUUID && crypto.randomUUID()) || String(Date.now());
+const DRAW_KEYS = ['alpha', 'outlineThickness', 'blurStrength', 'pixelSize'];
+
+const el = (id) => document.getElementById(id);
+const stage = el('stage');
+const video = el('cam');
+let latest = null;
+let currentMaxDim = {{ default_dim }};
+// Track whether a fresh image has been set since the last "Find them" was pressed.
+// "Find them" is locked out until a new picture is in place.
+let imageReady = false;
+
+const setStatus = (message, isError = false) => {
+  el('status').innerHTML = isError ? `<span class="error">${message}</span>` : message;
+  const pill = el('conn-pill');
+  if (pill) {
+    pill.textContent = isError ? 'error' : (latest && latest.backendReady ? 'ready' : 'no model');
+    pill.className = `pill ${isError ? 'off' : (latest && latest.backendReady ? 'on' : 'warn')}`;
+  }
+};
+const bgrToHex = ([b, g, r]) =>
+  '#' + [r, g, b].map(c => Math.max(0, Math.min(255, c | 0)).toString(16).padStart(2, '0')).join('');
+const hexToBgr = hex => { const v = parseInt(hex.slice(1), 16); return [v & 255, (v >> 8) & 255, (v >> 16) & 255]; };
+
+async function post(path, body) {
+  const response = await fetch(`${BASE}${path}?sid=${SID}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  return response.json();
+}
+async function postFile(path, field, file, filename) {
+  const form = new FormData();
+  form.append(field, file, filename);
+  const response = await fetch(`${BASE}${path}?sid=${SID}`, { method: 'POST', body: form });
+  return response.json();
+}
+
+// ----------- pipeline state ----------------------------------------------
+function setPipelineState(state) {
+  const hasImage = state.hasSource;
+  const hasResults = (state.instances || []).length > 0;
+  const busy = state.job && state.job.running;
+
+  // Step 1: always active.
+  el('step1').className = `step-card ${hasImage ? 'done' : 'active'}`;
+  el('step1-note').textContent = hasImage
+    ? `${state.sourceName || 'image'} · ${state.sourceSize.width}×${state.sourceSize.height}`
+    : 'Aim your camera or pick a file.';
+
+  // Step 2: unlocked as soon as we have an image.
+  el('step2').className = `step-card ${!hasImage ? 'locked' : imageReady ? 'active' : 'done'}`;
+  el('btn-resize').disabled = busy || !hasImage;
+
+  // Step 3: locked until imageReady; the image must be fresh before running.
+  const canRun = hasImage && imageReady && state.backendReady && !busy;
+  el('step3').className = `step-card ${!hasImage ? 'locked' : canRun ? 'active' : 'done'}`;
+  el('btn-run').disabled = !canRun;
+  el('btn-clear').disabled = !hasImage || busy;
+  el('prompts').disabled = !hasImage;
+  document.querySelectorAll('button.example').forEach(b => { b.disabled = !hasImage; });
+
+  // Step 4: show results when we have them.
+  el('step4').className = `step-card ${!hasResults ? 'locked' : 'done'}`;
+  el('btn-download').href = `${BASE}/snapshot?sid=${SID}`;
+}
+
+function refreshImage(state) {
+  if (!state.hasSource) return;
+  el('result').src = `${BASE}/result.png?sid=${SID}&v=${state.revision}&t=${Date.now()}`;
+  stage.classList.remove('live');
+}
+
+function renderLabels(state) {
+  const list = el('labels');
+  list.textContent = '';
+  el('labels-empty').hidden = state.labels.length > 0;
+  state.labels.forEach(label => {
+    const item = document.createElement('li');
+    if (!label.visible) item.classList.add('off');
+    const top = document.createElement('div');
+    top.className = 'top';
+
+    const toggle = document.createElement('input');
+    toggle.type = 'checkbox'; toggle.checked = label.visible; toggle.title = 'Show/hide';
+    toggle.addEventListener('change', () => style(label.label, { visible: toggle.checked }));
+
+    const name = document.createElement('span');
+    name.className = 'name'; name.textContent = label.label;
+
+    const count = document.createElement('span');
+    count.className = 'count';
+    count.textContent = `${state.counts[label.label] || 0} found`;
+
+    const colour = document.createElement('input');
+    colour.type = 'color'; colour.value = bgrToHex(label.colour); colour.title = 'Colour';
+    colour.addEventListener('change', () => style(label.label, { colour: hexToBgr(colour.value) }));
+
+    const effect = document.createElement('select');
+    EFFECTS.forEach(name_ => {
+      const opt = document.createElement('option');
+      opt.value = name_; opt.textContent = name_; opt.selected = name_ === label.effect;
+      effect.append(opt);
+    });
+    effect.title = 'Effect';
+    effect.addEventListener('change', () => style(label.label, { effect: effect.value }));
+
+    top.append(toggle, name, count, colour, effect);
+    item.append(top);
+    list.append(item);
+  });
+}
+
+function renderJob(state) {
+  const job = state.job || { state: 'idle', running: false };
+  const loading = job.running && job.kind === 'load';
+  const segmenting = job.running && job.kind === 'segment';
+
+  const loadWrap = el('load-progress');
+  loadWrap.hidden = !loading;
+  if (loading) {
+    const bits = [`<b>${job.stage}</b>`];
+    if (job.megabytes > 0) bits.push(`<b>${job.megabytes.toFixed(0)} MB</b>`);
+    if (job.rate > 0.05) bits.push(`${job.rate.toFixed(1)} MB/s`);
+    bits.push(`${job.elapsed.toFixed(0)}s`);
+    el('load-line').innerHTML = bits.join(' &middot; ');
+  }
+
+  const runWrap = el('run-progress');
+  runWrap.hidden = !segmenting;
+  if (segmenting) {
+    el('run-line').innerHTML = `<b>${job.stage}</b> &middot; ${job.elapsed.toFixed(0)}s elapsed`;
+  }
+
+  const note = el('backend-note');
+  const failure = (job.state === 'error' && job.error) || null;
+  note.textContent = failure || state.backendDetail || '';
+  note.classList.toggle('bad', Boolean(failure) || !state.backendReady);
+  el('auth-panel').classList.toggle('warn-panel', !state.backendReady);
+
+  // Button feedback.
+  el('btn-token').disabled = job.running;
+  el('btn-token').textContent = job.running ? 'Loading…'
+    : state.backendReady ? 'Reload' : state.hasToken ? 'Load model' : 'Use';
+
+  const pill = el('conn-pill');
+  if (pill) {
+    const text = loading ? 'loading' : segmenting ? 'segmenting'
+      : job.state === 'error' ? 'error'
+      : state.backendReady ? (state.demoMode ? 'demo' : 'ready') : 'no model';
+    pill.textContent = text;
+    pill.className = `pill ${ ['error','no model'].includes(text) ? 'off' : text === 'ready' || text === 'demo' ? 'on' : 'warn' }`;
+  }
+
+  if (job.state === 'error' && job.error && !segmenting) setStatus(job.error, true);
+  return job;
+}
+
+let pollTimer = null;
+function schedulePoll(job) {
+  if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+  if (!job || !job.running) return;
+  pollTimer = setTimeout(async () => {
+    try { apply(await (await fetch(`${BASE}/status?sid=${SID}`)).json()); }
+    catch (err) { setStatus(`lost contact: ${err.message}`, true); }
+  }, 700);
+}
+
+function apply(state) {
+  if (!state || state.revision === undefined) return;
+  latest = state;
+  refreshImage(state);
+  renderLabels(state);
+  const job = renderJob(state);
+  schedulePoll(job);
+  setPipelineState(state);
+
+  el('set-mode').value = state.settings.mode;
+  Object.entries(state.settings).forEach(([key, value]) => {
+    const input = el(`set-${key}`);
+    const output = el(`out-${key}`);
+    if (input && input.type === 'range') input.value = value;
+    if (output) output.textContent = key === 'alpha' ? Number(value).toFixed(2) : value;
+  });
+
+  if (state.error && !state.job?.running) setStatus(state.error, true);
+}
+
+const style = async (label, changes) =>
+  apply(await post('/command', { command: 'style', payload: { label, ...changes } }));
+
+// ----------- step 1: camera and upload -----------------------------------
+el('btn-live').addEventListener('click', async () => {
+  try {
+    if (!video.srcObject) {
+      video.srcObject = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, facingMode: 'user' }, audio: false,
+      });
+      await video.play();
+    }
+    stage.classList.add('live');
+    el('btn-capture').disabled = false;
+    setStatus('camera open — frame your subject, then press Capture');
+  } catch (err) {
+    setStatus(`camera unavailable: ${err.message}`, true);
+  }
+});
+
+el('btn-capture').addEventListener('click', async () => {
+  const grab = document.createElement('canvas');
+  grab.width = video.videoWidth; grab.height = video.videoHeight;
+  grab.getContext('2d').drawImage(video, 0, 0);
+  const blob = await new Promise(resolve => grab.toBlob(resolve, 'image/jpeg', 0.92));
+  const body = await postFile('/capture', 'frame', blob, 'frame.jpg');
+  if (body.ok) {
+    imageReady = true;  // fresh photo: unlock step 3
+    apply(body);
+    setStatus('captured — resize if you like, then press Find them');
+  } else setStatus(body.error || 'capture failed', true);
+});
+
+el('file').addEventListener('change', async event => {
+  const file = event.target.files[0];
+  if (!file) return;
+  const body = await postFile('/upload', 'image', file, file.name);
+  if (body.ok) {
+    imageReady = true;  // fresh upload: unlock step 3
+    apply(body);
+    setStatus('uploaded — resize if you like, then press Find them');
+  } else setStatus(body.error || 'upload failed', true);
+});
+
+// ----------- step 2: resize ----------------------------------------------
+el('set-maxdim').addEventListener('input', () => {
+  el('out-maxdim').textContent = el('set-maxdim').value + 'px';
+});
+
+el('btn-resize').addEventListener('click', async () => {
+  const dim = Number(el('set-maxdim').value);
+  const body = await post('/command', { command: 'settings', payload: { maxDim: dim } });
+  currentMaxDim = dim;
+  // Resize resets the result so a new run is needed.
+  imageReady = true;
+  apply(body);
+  setStatus(`resized to max ${dim}px — press Find them to run on the new size`);
+});
+
+// ----------- step 3: labeling --------------------------------------------
+document.querySelectorAll('button.example').forEach(button => {
+  button.addEventListener('click', () => {
+    const box = el('prompts');
+    box.value = box.value.trim() ? `${box.value.trim()}, ${button.dataset.text}` : button.dataset.text;
+  });
+});
+
+el('btn-run').addEventListener('click', async () => {
+  imageReady = false;  // a run consumes the "fresh image" token
+  const body = await post('/run', { prompts: el('prompts').value });
+  apply(body);
+  if (!body.ok && body.error) setStatus(body.error, true);
+});
+
+el('btn-clear').addEventListener('click', async () => {
+  apply(await post('/command', { command: 'clear' }));
+});
+
+// ----------- auth panel --------------------------------------------------
+el('btn-token').addEventListener('click', async () => {
+  const input = el('token');
+  apply(await post('/token', { token: input.value, demoMode: el('demo-mode').checked }));
+  input.value = '';
+});
+el('demo-mode').addEventListener('change', async event =>
+  apply(await post('/token', { token: '', demoMode: event.target.checked })));
+
+// ----------- output settings panel --------------------------------------
+el('set-mode').addEventListener('change', async event =>
+  apply(await post('/command', { command: 'settings', payload: { mode: event.target.value } })));
+
+document.querySelectorAll('#settings-wrap input[type=range]').forEach(input => {
+  const key = input.dataset.key;
+  input.addEventListener('input', () => {
+    const out = el(`out-${key}`);
+    if (out) out.textContent = key === 'alpha' ? Number(input.value).toFixed(2) : input.value;
+  });
+  input.addEventListener('change', async () => {
+    apply(await post('/command', { command: 'settings', payload: { [key]: Number(input.value) } }));
+  });
+});
+
+el('btn-settings').addEventListener('click', event => {
+  const wrap = el('settings-wrap');
+  wrap.hidden = !wrap.hidden;
+  event.currentTarget.textContent = wrap.hidden ? 'More settings' : 'Hide settings';
+  event.currentTarget.setAttribute('aria-expanded', String(!wrap.hidden));
+});
+
+// ----------- init --------------------------------------------------------
+fetch(`${BASE}/state?sid=${SID}`).then(r => r.json()).then(apply);
+{% endblock %}

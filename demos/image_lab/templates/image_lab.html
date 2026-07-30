@@ -146,6 +146,13 @@ let revision = 0;
 const el = (id) => document.getElementById(id);
 const setStatus = (message, isError = false) => {
   el('status').innerHTML = isError ? `<span class="error">${message}</span>` : message;
+  // base.html ships a "connecting" pill for the streaming demos; this page has no
+  // stream, so it would otherwise sit on "connecting" forever.
+  const pill = el('conn-pill');
+  if (pill) {
+    pill.textContent = isError ? 'error' : 'ready';
+    pill.className = `pill ${isError ? 'off' : 'on'}`;
+  }
 };
 
 /** BGR triple <-> #rrggbb, since cv2 colours are BGR but <input type=color> is RGB. */

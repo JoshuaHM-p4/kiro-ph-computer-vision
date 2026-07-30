@@ -91,7 +91,11 @@ class TestHomeHub:
         rules = {rule.rule for rule in client.application.url_map.iter_rules()}
         # The image lab works on stills and the scavenger hunt runs YOLO server
         # side, so neither streams landmarks; both post images instead.
-        posts_images = {"image-lab": "/pipeline", "scavenger-hunt": "/frame"}
+        posts_images = {
+            "image-lab": "/pipeline",
+            "scavenger-hunt": "/frame",
+            "sam-labeler": "/run",
+        }
         for demo in DEMOS:
             prefix = BUILDERS[demo.slug].URL_PREFIX
             if demo.slug in posts_images:
@@ -180,15 +184,19 @@ class TestMenuKeyboard:
         assert model.selected == len(model.cards) - 1
 
     def test_every_card_is_reachable_with_the_arrow_keys(self):
-        """An odd demo count leaves a ragged last row; nothing may be stranded."""
+        """A ragged last row must not strand a card, whatever the demo count."""
+        template = MenuModel()
+        rows = (len(template.cards) + template.columns - 1) // template.columns
         reached = set()
-        for keys in ([], [KEY_RIGHT], [KEY_DOWN], [KEY_DOWN, KEY_RIGHT],
-                     [KEY_DOWN, KEY_DOWN], [KEY_DOWN, KEY_DOWN, KEY_RIGHT]):
-            model = MenuModel()
-            for key in keys:
-                model.handle_key(key)
-            reached.add(model.selected)
-        assert reached == set(range(len(model.cards)))
+        for row in range(rows):
+            for column in range(template.columns):
+                model = MenuModel()
+                for _ in range(row):
+                    model.handle_key(KEY_DOWN)
+                for _ in range(column):
+                    model.handle_key(KEY_RIGHT)
+                reached.add(model.selected)
+        assert reached == set(range(len(template.cards)))
 
     def test_vim_keys_work_too(self):
         model = MenuModel()

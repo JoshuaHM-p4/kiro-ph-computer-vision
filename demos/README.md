@@ -5,7 +5,7 @@ are here to read and borrow from — **you build your own thing in
 [`projects/`](../projects/)**, and the prompts that produced these demos are in
 [`docs/prompts/`](../docs/prompts/).
 
-Six interactive OpenCV + MediaPipe demos. Each one runs two ways:
+Seven interactive OpenCV + MediaPipe demos. Each one runs two ways:
 
 - **desktop** — an OpenCV window, vision by MediaPipe Python
 - **web** — a Flask page where MediaPipe runs *in the browser* and streams
@@ -19,6 +19,7 @@ Six interactive OpenCV + MediaPipe demos. Each one runs two ways:
 | 6-7 Counter | Counts alternating-hand reps from pose | `python -m demos.six_seven_counter.desktop` | `/six-seven/` |
 | PNGTuber | Head yaw + expression pick a sprite | `python -m demos.pngtuber.desktop` | `/pngtuber/` |
 | Scavenger Hunt | "Bring me a cup" - find real objects on camera before the timer ends | `python -m demos.scavenger_hunt.desktop` | `/scavenger-hunt/` |
+| SAM Labeler | Type what to find, get masks, then style them with OpenCV effects | `python -m demos.sam_labeler.desktop` | `/sam-labeler/` |
 
 ## Setup
 
@@ -63,7 +64,8 @@ demo detects them missing and prints the command — so run these once after clo
 ```
 
 Port map: hub `5000`, air canvas `5001`, slides `5002`, 6-7 counter `5003`,
-PNGTuber `5004`, image lab `5005`, scavenger hunt `5006`, echo diagnostic `5009`. Change any of them with `--port`.
+PNGTuber `5004`, image lab `5005`, scavenger hunt `5006`, SAM labeler `5007`,
+echo diagnostic `5009`. Change any of them with `--port`.
 
 ### Image Lab
 
@@ -194,6 +196,67 @@ This demo also inverts the usual arrangement here: YOLO has no browser build in 
 project, so the page posts **JPEG frames** at about 4 fps and the server runs
 inference, instead of streaming landmarks over a WebSocket.
 
+### SAM Labeler
+
+Text-prompted segmentation. Capture a still from the webcam or upload a picture, type
+what to look for in plain words — `person, laptop, coffee mug` — and SAM 3.1 returns a
+mask per match. The labels appear in a list where each one gets its own colour and
+effect.
+
+Seven effects, all plain OpenCV over a boolean mask:
+
+| Effect | What it does |
+|---|---|
+| `fill` | `addWeighted` a colour over the masked pixels |
+| `outline` | `findContours` + `drawContours`, nothing filled |
+| `blur` | Gaussian blur inside the mask — anonymise a face or a screen |
+| `pixelate` | Downscale then nearest-neighbour upscale, inside the mask |
+| `spotlight` | Darken everything *outside* the mask |
+| `cutout` | Replace everything outside the mask with a flat colour |
+| `hide` | Draw nothing, keep it in the list |
+
+A mode switch turns segmentation into detection by reducing each mask to its bounding
+box — the same thing you would export to a YOLO detection dataset.
+
+**The model is gated.** `facebook/sam3` needs a Hugging Face read token, and
+`transformers` must be new enough to expose `Sam3Model`:
+
+```bash
+pip install 'git+https://github.com/huggingface/transformers.git'
+
+# then either paste a token into the page, or better:
+HF_TOKEN=hf_... .venv/bin/python -m demos.sam_labeler.web
+```
+
+The token is held in memory for the session only: never written to disk, never logged,
+never returned in a response, and the input field is masked. If you would rather not
+paste a credential into a browser at all, set `HF_TOKEN` before starting the server.
+Note that this app has no authentication, so keep it on localhost — anyone who can
+reach the port can use your token's access.
+
+**No token, no problem.** `--demo-mode` (or the checkbox on the page) substitutes
+synthetic ellipse masks derived from the prompt text, so the effects, the styling and
+the whole UI work offline with nothing downloaded. That is also what the tests use, which
+is why the suite needs no model.
+
+Anything unloadable — old transformers, missing token, gated repo, failed download —
+degrades to a backend that carries the reason and shows it on the page, rather than
+raising on import.
+
+**Loading and inference run on a worker thread.** The first load pulls several
+gigabytes and CPU inference on a 1024px image takes a while, so neither happens inside
+a request: `POST /token` and `POST /run` return immediately with a job, and the page
+polls `GET /status` about once a second. The progress line reports the stage, how many
+**megabytes have landed in the Hugging Face cache**, the download rate and the elapsed
+time — the hub does not announce a total up front, so the bar sweeps rather than
+inventing a percentage. Only one job runs at a time; a second request while busy gets a
+409 rather than starting a duplicate inference.
+
+Step 2 stays **locked until there is an image**: the prompt box, the example chips and
+*Find them* are all disabled, with a note saying to capture or upload first. The server
+enforces the same rule — `/run` returns 400 if there is no image or no prompt — so it
+cannot be bypassed by a stale page.
+
 ## Controls
 
 Shared desktop keys: `q`/`ESC` quit, `d` debug overlay, `SPACE` mirror,
@@ -207,6 +270,7 @@ Shared desktop keys: `q`/`ESC` quit, `d` debug overlay, `SPACE` mirror,
 | 6-7 Counter | `r` reset, `a` add one, `p` re-prepare, `g` see-saw overlay, `k` skeleton | alternate hands like a see-saw: as one rises the other drops |
 | PNGTuber | `c` recalibrate neutral, `b` background (camera/solid/chroma), `v` camera inset, `1`-`4` preview an expression | turn your head; smile / raise brows + open mouth / lower brows or squint |
 | Scavenger Hunt | SPACE start / restart, `n` skip the item, `m` model info, `+`/`-` timer, `[`/`]` confidence | hold the named object up to the camera |
+| SAM Labeler | `r` run, TAB next label, `e` effect, `c` colour, `h` hide, `m` mode, `s` save, `l` list | none: keyboard and mouse |
 
 The air canvas keeps an on-screen **gesture legend** that highlights whichever
 hand shape it currently recognises, which doubles as feedback that the gesture
@@ -361,6 +425,7 @@ values as CLI flags.
 | `air_canvas/config.py` | `dwell_seconds`, `size_min/max`, `eraser_scale`, `min_move` | palette responsiveness, brush range |
 | `slide_presenter/config.py` | `advance_cooldown`, `pinch_start_ratio`, `laser_alpha` | how eagerly pinches register, laser steadiness |
 | `scavenger_hunt/config.py` | `round_seconds`, `confidence`, `rounds`, `hold_seconds`, `SETTING_BOUNDS` | game defaults, and the limits the in-game settings panel clamps to |
+| `sam_labeler/config.py` | `confidence`, `mask_threshold`, `alpha`, `blur_strength`, `pixel_size`, `PALETTE`, `EFFECTS` | what counts as a match, and how masks are drawn |
 | `six_seven_counter/config.py` | `tilt_enter` (0.15 body lengths), `min_swap_seconds`, `prepare_seconds`, `lost_grace_seconds`, `shoulder_to_torso` | how big a swap must be, how fast swaps may come, how long the prepare hold lasts, how much lost tracking is tolerated |
 | `pngtuber/config.py` | `yaw_enter`/`yaw_release`, `*_delta`, `calibration_seconds`, `yaw_compensation` | bucket width, expression sensitivity, yaw/expression decoupling |
 | any | `--swap-handedness` | fixes inverted left/right hand labels |
@@ -368,7 +433,7 @@ values as CLI flags.
 ## Tests
 
 ```bash
-.venv/bin/python -m pytest -c demos/pytest.ini        # 674 tests, no camera or model needed
+.venv/bin/python -m pytest -c demos/pytest.ini        # 753 tests, no camera, model or token needed
 ```
 
 Everything is driven by synthetic landmarks from `demos/tests/fixtures.py`

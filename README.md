@@ -116,6 +116,7 @@ kiro-computer-vision/
 │   ├── six_seven_counter/  Rep counting from pose
 │   ├── pngtuber/           Head yaw + expression avatar
 │   ├── scavenger_hunt/     COCO object detection game
+│   ├── sam_labeler/        SAM 3.1 text-prompted segmentation
 │   ├── common/             Shared building blocks
 │   └── tools/              Asset generators
 └── projects/               ⬅️ WHERE YOU BUILD
@@ -126,7 +127,7 @@ kiro-computer-vision/
 ## 🧠 The prompt library
 
 [`docs/prompts/`](docs/prompts/) is the most useful thing here if you are building
-something of your own. Nine documents, one per demo plus the general patterns:
+something of your own. Ten documents, one per demo plus the general patterns:
 
 | Prompt | Teaches |
 |---|---|
@@ -139,13 +140,14 @@ something of your own. Nine documents, one per demo plus the general patterns:
 | [Scavenger hunt](docs/prompts/06-scavenger-hunt.md) | Pretrained detection models, and the install trap |
 | [Flask web layer](docs/prompts/07-flask-web-layer.md) | Getting any of it into a browser |
 | [Testing vision code](docs/prompts/08-testing-vision-code.md) | A suite that runs with no webcam |
+| [SAM labeler](docs/prompts/09-sam-labeler.md) | Text-prompted segmentation, gated models, and what to do with a mask |
 
 Each one records the follow-up questions that actually improved the demo, because the
 first answer is never the finished thing.
 
 ## 🎥 The demos
 
-Six worked examples, each runnable as a desktop OpenCV window and as a Flask web app.
+Seven worked examples, each runnable as a desktop OpenCV window and as a Flask web app.
 Read them, run them, take what you need — they are reference material, not the point of
 the repository.
 

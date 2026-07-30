@@ -25,6 +25,7 @@ from ..image_lab import web as image_lab_web
 from ..common.echo import build as build_echo
 from ..common.webapp import add_web_arguments, create_app, run_standalone
 from ..pngtuber import web as pngtuber_web
+from ..sam_labeler import web as sam_labeler_web
 from ..scavenger_hunt import web as scavenger_web
 from ..pngtuber.core import PngTuberCore
 from ..six_seven_counter import web as six_seven_web
@@ -39,6 +40,7 @@ BUILDERS = {
     "six-seven": six_seven_web,
     "pngtuber": pngtuber_web,
     "scavenger-hunt": scavenger_web,
+    "sam-labeler": sam_labeler_web,
 }
 
 

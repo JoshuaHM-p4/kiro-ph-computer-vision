@@ -19,6 +19,7 @@ context to give, which constraints to state up front, and what to ask for in ret
 | 5 | [PNGTuber](05-pngtuber.md) | An avatar driven by head angle and expression | Head pose, facial ratios, calibration |
 | 6 | [Scavenger hunt](06-scavenger-hunt.md) | A timed game over YOLO object detection | Pretrained detection models, game state, scoring |
 | 7 | [Flask web layer](07-flask-web-layer.md) | Any of the above, in a browser | Streaming vision data to a server, or frames to a model |
+| 9 | [SAM labeler](09-sam-labeler.md) | Text-prompted segmentation, then styling the masks | Gated models, credential handling, and what to do with a mask |
 | 8 | [Testing vision code](08-testing-vision-code.md) | A test suite that needs no webcam | Making camera code testable at all |
 
 ## How to use one
