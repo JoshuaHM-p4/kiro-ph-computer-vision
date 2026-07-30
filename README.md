@@ -44,6 +44,7 @@ The short version:
 
 1. **Fork and clone** this repository, then `cd kiro-computer-vision`.
 2. **Set up the environment** from the repo root (Python 3.10–3.12):
+
    ```bash
    python3.12 -m venv .venv
    source .venv/bin/activate          # Windows: .venv\Scripts\activate
@@ -51,13 +52,16 @@ The short version:
    pip install -r requirements.txt
    python check_setup.py              # verify everything is ready
    ```
+
 3. **Make your folder** `projects/<your-github-username>/` and build there.
 4. **Start Kiro from the repo root** (not inside your project folder — the
    `.kiro/steering` and `.kiro/skills` context only loads from the current
    directory):
+
    ```bash
-   kiro-cli chat
+   kiro-cli chat --trust-all-tools
    ```
+
    Then tell Kiro to build in `projects/<your-github-username>/`.
 
 Open the **[prompt library](docs/prompts/)** and pick the prompt closest to your
