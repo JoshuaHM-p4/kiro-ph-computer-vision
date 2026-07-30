@@ -7,8 +7,10 @@ You are here to build something. Fork this repo, make a folder in
 Everything else here — the prompt library, the working demos — is reference material to
 borrow from.
 
-> **New here?** Jump to [Workshop instructions](#-workshop-instructions) and start at
-> Step 1. It takes about five minutes to get to a running camera.
+> **New here?** The full step-by-step walkthrough lives in the
+> [**workshop guide**](https://kiroversew7.notion.site/) (mirrored locally in
+> [`docs/Notion.md`](docs/Notion.md)). It takes about five minutes to get to a
+> running camera.
 
 ---
 
@@ -33,68 +35,36 @@ handle complex dependencies.
 
 ## 🛠️ Workshop instructions
 
-For this Build Night you will fork this repository, build your computer vision app in
-your own folder, and use Kiro to help write your code.
+The full step-by-step instructions — forking, environment setup, prerequisites
+(Hugging Face token, Python 3.10–3.12), and building with Kiro — live in the
+**[workshop guide](https://kiroversew7.notion.site/)**, mirrored in this repo at
+[`docs/Notion.md`](docs/Notion.md).
 
-### Step 1: Fork and clone
+The short version:
 
-1. Click **Fork** at the top right of this repository to create a copy on your account.
-2. Clone your fork:
+1. **Fork and clone** this repository, then `cd kiro-computer-vision`.
+2. **Set up the environment** from the repo root (Python 3.10–3.12):
+   ```bash
+   python3.12 -m venv .venv
+   source .venv/bin/activate          # Windows: .venv\Scripts\activate
+   pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+   pip install -r requirements.txt
+   python check_setup.py              # verify everything is ready
+   ```
+3. **Make your folder** `projects/<your-github-username>/` and build there.
+4. **Start Kiro from the repo root** (not inside your project folder — the
+   `.kiro/steering` and `.kiro/skills` context only loads from the current
+   directory):
+   ```bash
+   kiro-cli chat
+   ```
+   Then tell Kiro to build in `projects/<your-github-username>/`.
 
-```bash
-git clone https://github.com/<YOUR-USERNAME>/kiro-computer-vision.git
-cd kiro-computer-vision
-```
-
-### Step 2: Create your workspace
-
-Make a folder in `projects/` named after your GitHub username. All your code lives
-there, so pulling updates to the shared parts never conflicts with your work.
-
-```bash
-mkdir projects/<your-github-username>
-```
-
-### Step 3: Set up your environment
-
-From the repository root. **Python 3.10–3.12** — mediapipe publishes no wheels for
-3.13+, so a newer interpreter fails at install time with
-*"No matching distribution found for mediapipe"*.
-
-```bash
-python3.12 -m venv .venv
-
-source .venv/bin/activate          # Linux/macOS
-# .venv\Scripts\activate           # Windows
-
-# torch arrives with ultralytics. Install the CPU build first unless you want
-# 3-5 GB of CUDA wheels you will not use:
-pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
-pip install -r requirements.txt
-```
-
-Check it worked:
-
-```bash
-python -c "import cv2, mediapipe, numpy; print(cv2.__version__, mediapipe.__version__)"
-```
-
-### Step 4: Start building with Kiro
-
-Run Kiro from inside your own folder so it works in your project's context:
-
-```bash
-cd projects/<your-github-username>
-kiro-cli chat
-```
-
-Now open the **[prompt library](docs/prompts/)** and pick the prompt closest to your
-idea. Those are the actual prompts that produced the demos in this repo, cleaned up for
-reuse — swap in your subject matter and keep the constraints.
-
+Open the **[prompt library](docs/prompts/)** and pick the prompt closest to your
+idea — those are the actual prompts that produced the demos, cleaned up for reuse.
 If you want a file layout to start from, copy
-[`projects/your_example_app/`](projects/your_example_app/): a runnable camera loop, its
-logic split into a pure module, and tests that need no webcam.
+[`projects/your_example_app/`](projects/your_example_app/): a runnable camera loop,
+its logic split into a pure module, and tests that need no webcam.
 
 ---
 
