@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Posture Checker — Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+        }
+
+        header {
+            background: #16213e;
+            padding: 1rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 2px solid #0f3460;
+        }
+
+        header h1 {
+            font-size: 1.4rem;
+            color: #e94560;
+        }
+
+        .header-controls {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+        }
+
+        .status-badge {
+            padding: 0.4rem 1rem;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: background 0.3s;
+        }
+
+        .status-good { background: #27ae60; color: #fff; }
+        .status-bad { background: #e74c3c; color: #fff; }
+        .status-unknown { background: #7f8c8d; color: #fff; }
+
+        .container {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            grid-template-rows: auto auto;
+            gap: 1rem;
+            padding: 1rem;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        .panel {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 1.2rem;
+            border: 1px solid #0f3460;
+        }
+
+        .panel h2 {
+            font-size: 1rem;
+            color: #a8d8ea;
+            margin-bottom: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        /* Video Feed */
+        .video-panel {
+            grid-row: 1 / 3;
+        }
+
+        .video-panel img {
+            width: 100%;
+            border-radius: 8px;
+            background: #000;
+        }
+
+        /* Score Panel */
+        .score-display {
+            text-align: center;
+            padding: 1rem 0;
+        }
+
+        .score-number {
+            font-size: 3.5rem;
+            font-weight: 700;
+            transition: color 0.3s;
+        }
+
+        .score-label {
+            font-size: 0.85rem;
+            color: #888;
+            margin-top: 0.3rem;
+        }
+
+        /* Metrics */
+        .metrics {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.6rem;
+            margin-top: 1rem;
+        }
+
+        .metric {
+            background: #1a1a2e;
+            padding: 0.8rem;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+
+        .metric-label {
+            font-size: 0.75rem;
+            color: #888;
+            margin-top: 0.2rem;
+        }
+
+        .metric-ok { color: #27ae60; }
+        .metric-bad { color: #e74c3c; }
+
+        /* Streak */
+        .streak-panel {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .streak-box {
+            flex: 1;
+            background: #1a1a2e;
+            border-radius: 8px;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .streak-time {
+            font-size: 1.8rem;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .streak-good { color: #27ae60; }
+        .streak-bad { color: #e74c3c; }
+
+        /* Messages */
+        .messages {
+            margin-top: 1rem;
+        }
+
+        .message-item {
+            padding: 0.4rem 0.8rem;
+            margin: 0.3rem 0;
+            border-radius: 6px;
+            font-size: 0.85rem;
+        }
+
+        .msg-warning { background: rgba(231, 76, 60, 0.15); color: #e74c3c; }
+        .msg-good { background: rgba(39, 174, 96, 0.15); color: #27ae60; }
+
+        /* Chart */
+        .chart-panel {
+            grid-column: 1 / -1;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 200px;
+            background: #1a1a2e;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        /* Replays */
+        .replay-panel {
+            grid-column: 1 / -1;
+        }
+
+        .replay-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-top: 0.8rem;
+        }
+
+        .replay-card {
+            background: #1a1a2e;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .replay-card video {
+            width: 100%;
+            display: block;
+        }
+
+        .replay-info {
+            padding: 0.6rem 0.8rem;
+            font-size: 0.8rem;
+            color: #aaa;
+        }
+
+        .processing-card {
+            border: 2px dashed #e94560;
+        }
+
+        .processing-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.8rem;
+            padding: 2rem 1rem;
+            color: #e94560;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .processing-spinner {
+            width: 20px;
+            height: 20px;
+            border: 3px solid #333;
+            border-top: 3px solid #e94560;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+            .video-panel {
+                grid-row: auto;
+            }
+        }
+
+        /* Recording button */
+        .rec-btn {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border: 2px solid #555;
+            border-radius: 20px;
+            background: #1a1a2e;
+            color: #ccc;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .rec-btn:hover { border-color: #e74c3c; color: #fff; }
+
+        .rec-btn.active {
+            border-color: #e74c3c;
+            background: rgba(231, 76, 60, 0.15);
+            color: #e74c3c;
+        }
+
+        .rec-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #555;
+            transition: background 0.3s;
+        }
+
+        .rec-btn.active .rec-dot {
+            background: #e74c3c;
+            animation: pulse 1.2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        /* Toggle buttons */
+        .toggle-btn {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.4rem 0.8rem;
+            border: 1px solid #555;
+            border-radius: 16px;
+            background: #1a1a2e;
+            color: #aaa;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .toggle-btn:hover { border-color: #a8d8ea; color: #fff; }
+        .toggle-btn.active { border-color: #27ae60; color: #27ae60; }
+        .toggle-btn.active::before { content: '✓ '; }
+
+        /* Camera selector */
+        .camera-select {
+            padding: 0.4rem 0.8rem;
+            border: 1px solid #555;
+            border-radius: 16px;
+            background: #1a1a2e;
+            color: #ccc;
+            font-size: 0.8rem;
+            cursor: pointer;
+            outline: none;
+        }
+
+        .camera-select:hover { border-color: #a8d8ea; }
+        .camera-select:focus { border-color: #e94560; }
+
+        /* Alarm flash */
+        .alarm-flash {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            height: 4px;
+            background: #e74c3c;
+            animation: alarm-pulse 0.5s ease-in-out 3;
+            z-index: 1000;
+        }
+
+        .alarm-flash.show { display: block; }
+
+        @keyframes alarm-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.2; }
+        }
+
+        .capture-flash {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: white;
+            z-index: 999;
+            animation: capture-fade 0.4s ease-out forwards;
+            pointer-events: none;
+        }
+
+        .capture-flash.show { display: block; }
+
+        @keyframes capture-fade {
+            0% { opacity: 0.6; }
+            100% { opacity: 0; }
+        }
+    </style>
+</head>
+<body>
+    <div class="alarm-flash" id="alarmFlash"></div>
+    <div class="capture-flash" id="captureFlash"></div>
+
+    <header>
+        <h1>🧍 Posture Checker</h1>
+        <div class="header-controls">
+            <select class="camera-select" id="cameraSelect" onchange="switchCamera()" aria-label="Select camera">
+                <option value="0">Camera 0</option>
+            </select>
+            <button class="toggle-btn" id="alarmToggle" onclick="toggleAlarm()" aria-label="Toggle alarm sound">
+                🔔 Alarm
+            </button>
+            <button class="rec-btn" id="recBtn" onclick="toggleRecording()" aria-label="Toggle recording">
+                <span class="rec-dot" id="recDot"></span>
+                <span id="recLabel">Start Recording</span>
+            </button>
+            <span class="status-badge status-unknown" id="statusBadge">Connecting…</span>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Live Video Feed -->
+        <div class="panel video-panel">
+            <h2>Live Feed</h2>
+            <img src="/video_feed" alt="Live camera feed" id="videoFeed">
+        </div>
+
+        <!-- Score + Metrics -->
+        <div class="panel">
+            <h2>Posture Score</h2>
+            <div class="score-display">
+                <div class="score-number" id="scoreNumber">—</div>
+                <div class="score-label">out of 100</div>
+            </div>
+
+            <div class="metrics">
+                <div class="metric">
+                    <div class="metric-value" id="metricHead">—</div>
+                    <div class="metric-label">Head Position</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value" id="metricShoulders">—</div>
+                    <div class="metric-label">Shoulders</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value" id="metricTorso">—</div>
+                    <div class="metric-label">Torso</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value" id="metricView">—</div>
+                    <div class="metric-label">View Detected</div>
+                </div>
+            </div>
+
+            <!-- Streak Timers -->
+            <div class="streak-panel">
+                <div class="streak-box">
+                    <div class="streak-time streak-good" id="goodStreak">0:00</div>
+                    <div class="metric-label">Good Streak</div>
+                </div>
+                <div class="streak-box">
+                    <div class="streak-time streak-bad" id="badStreak">0:00</div>
+                    <div class="metric-label">Bad Streak</div>
+                </div>
+            </div>
+
+            <!-- Issues -->
+            <div class="messages" id="messageList"></div>
+        </div>
+
+        <!-- Score History Chart -->
+        <div class="panel chart-panel">
+            <h2>Session Score History</h2>
+            <div class="chart-container">
+                <canvas id="scoreChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Slouch Replays -->
+        <div class="panel replay-panel">
+            <h2>Slouch Replays</h2>
+            <div class="replay-grid" id="replayGrid">
+                <p style="color: #666;">No slouch events recorded yet.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Alarm Sound (Web Audio API) ---
+        let alarmEnabled = true;
+        let audioCtx = null;
+        let lastAlarmFired = 0;   // Prevent repeat alarms within same event window
+        let lastCaptureFired = 0;
+
+        function playAlarmSound() {
+            if (!alarmEnabled) return;
+            const now = Date.now();
+            if (now - lastAlarmFired < 3000) return; // Don't repeat within 3s
+            lastAlarmFired = now;
+
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+            // Three-beep alarm pattern
+            [0, 0.2, 0.4].forEach(delay => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.type = 'square';
+                osc.frequency.value = 800;
+                gain.gain.value = 0.15;
+                osc.start(audioCtx.currentTime + delay);
+                osc.stop(audioCtx.currentTime + delay + 0.12);
+            });
+
+            // Visual flash
+            const flash = document.getElementById('alarmFlash');
+            flash.classList.add('show');
+            setTimeout(() => flash.classList.remove('show'), 1500);
+        }
+
+        function playCaptureSound() {
+            const now = Date.now();
+            if (now - lastCaptureFired < 3000) return;
+            lastCaptureFired = now;
+
+            // Visual flash (white screen like a camera flash)
+            const flash = document.getElementById('captureFlash');
+            flash.classList.remove('show');
+            void flash.offsetWidth; // Force reflow to restart animation
+            flash.classList.add('show');
+            setTimeout(() => flash.classList.remove('show'), 500);
+
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+            // Loud camera shutter: white noise burst + descending tone
+            // Noise burst (click)
+            const bufferSize = audioCtx.sampleRate * 0.05;
+            const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const data = noiseBuffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.2));
+            }
+            const noise = audioCtx.createBufferSource();
+            noise.buffer = noiseBuffer;
+            const noiseGain = audioCtx.createGain();
+            noiseGain.gain.value = 0.4;
+            noise.connect(noiseGain);
+            noiseGain.connect(audioCtx.destination);
+            noise.start(audioCtx.currentTime);
+
+            // Descending beep
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(1400, audioCtx.currentTime + 0.05);
+            osc.frequency.exponentialRampToValueAtTime(300, audioCtx.currentTime + 0.25);
+            gain.gain.setValueAtTime(0.35, audioCtx.currentTime + 0.05);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+            osc.start(audioCtx.currentTime + 0.05);
+            osc.stop(audioCtx.currentTime + 0.3);
+
+            // Second click at end
+            const noise2 = audioCtx.createBufferSource();
+            noise2.buffer = noiseBuffer;
+            const noiseGain2 = audioCtx.createGain();
+            noiseGain2.gain.value = 0.3;
+            noise2.connect(noiseGain2);
+            noiseGain2.connect(audioCtx.destination);
+            noise2.start(audioCtx.currentTime + 0.15);
+        }
+
+        function toggleAlarm() {
+            alarmEnabled = !alarmEnabled;
+            const btn = document.getElementById('alarmToggle');
+            if (alarmEnabled) {
+                btn.classList.add('active');
+                btn.textContent = '🔔 Alarm';
+            } else {
+                btn.classList.remove('active');
+                btn.textContent = '🔕 Alarm Off';
+            }
+        }
+
+        // --- Camera Selection ---
+        function loadCameras() {
+            fetch('/api/cameras')
+                .then(r => r.json())
+                .then(cameras => {
+                    const select = document.getElementById('cameraSelect');
+                    select.innerHTML = cameras.map(c =>
+                        `<option value="${c.index}">📷 Camera ${c.index}</option>`
+                    ).join('');
+                    // Set current camera
+                    fetch('/api/camera').then(r => r.json()).then(data => {
+                        select.value = data.camera;
+                    });
+                });
+        }
+
+        function switchCamera() {
+            const select = document.getElementById('cameraSelect');
+            const index = parseInt(select.value);
+            fetch('/api/camera', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ camera: index })
+            }).then(r => r.json()).then(data => {
+                // Refresh the video feed by reloading the img src
+                const feed = document.getElementById('videoFeed');
+                feed.src = '/video_feed?t=' + Date.now();
+            });
+        }
+
+        // --- Recording Toggle ---
+        let isRecording = false;
+
+        function toggleRecording() {
+            fetch('/api/recording', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: !isRecording })
+            })
+            .then(r => r.json())
+            .then(data => {
+                isRecording = data.recording;
+                updateRecordingUI();
+            });
+        }
+
+        function updateRecordingUI() {
+            const btn = document.getElementById('recBtn');
+            const label = document.getElementById('recLabel');
+            if (isRecording) {
+                btn.classList.add('active');
+                label.textContent = 'Recording';
+            } else {
+                btn.classList.remove('active');
+                label.textContent = 'Start Recording';
+            }
+        }
+
+        // --- WebSocket for real-time state ---
+        let ws;
+        let scoreHistory = [];
+        let chartCtx;
+
+        function connectWebSocket() {
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${location.host}/ws`);
+
+            ws.onopen = () => {
+                document.getElementById('statusBadge').textContent = 'Connected';
+                document.getElementById('statusBadge').className = 'status-badge status-good';
+            };
+
+            ws.onmessage = (event) => {
+                const state = JSON.parse(event.data);
+                updateDashboard(state);
+            };
+
+            ws.onclose = () => {
+                document.getElementById('statusBadge').textContent = 'Disconnected';
+                document.getElementById('statusBadge').className = 'status-badge status-unknown';
+                setTimeout(connectWebSocket, 2000);
+            };
+
+            ws.onerror = () => ws.close();
+        }
+
+        function updateDashboard(state) {
+            // Score
+            const scoreEl = document.getElementById('scoreNumber');
+            scoreEl.textContent = state.paused ? '—' : Math.round(state.score || 0);
+            scoreEl.style.color = state.paused ? '#7f8c8d' : scoreColor(state.score || 0);
+
+            // Status badge
+            const badge = document.getElementById('statusBadge');
+            if (state.paused) {
+                badge.textContent = '⏸ No Person';
+                badge.className = 'status-badge status-unknown';
+            } else if (state.is_slouching) {
+                badge.textContent = 'Bad Posture';
+                badge.className = 'status-badge status-bad';
+            } else {
+                badge.textContent = 'Good Posture';
+                badge.className = 'status-badge status-good';
+            }
+
+            // Metrics with detail
+            if (state.paused) {
+                setMetric('metricHead', true, '⏸');
+                setMetric('metricShoulders', true, '⏸');
+                setMetric('metricTorso', true, '⏸');
+                document.getElementById('metricView').textContent = 'No person';
+            } else {
+                const headText = state.head_forward
+                    ? `⚠ Forward ${state.head_forward_degrees}°`
+                    : '✓ OK';
+                setMetric('metricHead', !state.head_forward, headText);
+
+                let shoulderText;
+                if (state.shoulders_uneven) {
+                    const side = state.shoulder_higher_side || '?';
+                    shoulderText = `⚠ ${capitalize(side)} higher ${state.shoulder_tilt_degrees}°`;
+                } else {
+                    shoulderText = '✓ Level';
+                }
+                setMetric('metricShoulders', !state.shoulders_uneven, shoulderText);
+
+                const torsoText = state.torso_leaning
+                    ? `⚠ Leaning ${state.torso_lean_degrees}°`
+                    : '✓ Upright';
+                setMetric('metricTorso', !state.torso_leaning, torsoText);
+
+                document.getElementById('metricView').textContent = state.view || '—';
+            }
+
+            // Streaks
+            document.getElementById('goodStreak').textContent = formatTime(state.good_streak || 0);
+            document.getElementById('badStreak').textContent = formatTime(state.bad_streak || 0);
+
+            // Messages
+            const msgList = document.getElementById('messageList');
+            msgList.innerHTML = '';
+            (state.messages || []).forEach(msg => {
+                const div = document.createElement('div');
+                div.className = msg === 'Good posture!' ? 'message-item msg-good' : 'message-item msg-warning';
+                div.textContent = msg;
+                msgList.appendChild(div);
+            });
+
+            // Alarm + replay on slouch event
+            if (state.slouch_event) {
+                playAlarmSound();
+            }
+            if (state.capture_event) {
+                playCaptureSound();
+                showReplayProcessing();
+            }
+        }
+
+        function setMetric(id, isOk, text) {
+            const el = document.getElementById(id);
+            el.textContent = text;
+            el.className = 'metric-value ' + (isOk ? 'metric-ok' : 'metric-bad');
+        }
+
+        function scoreColor(score) {
+            if (score >= 80) return '#27ae60';
+            if (score >= 50) return '#f39c12';
+            return '#e74c3c';
+        }
+
+        function formatTime(seconds) {
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            return `${m}:${s.toString().padStart(2, '0')}`;
+        }
+
+        function capitalize(str) {
+            if (!str) return '';
+            return str.charAt(0).toUpperCase() + str.slice(1);
+        }
+
+        // --- Score Chart (green for good, red for bad) ---
+        function initChart() {
+            const canvas = document.getElementById('scoreChart');
+            chartCtx = canvas.getContext('2d');
+            canvas.width = canvas.parentElement.clientWidth;
+            canvas.height = canvas.parentElement.clientHeight;
+            drawChart();
+        }
+
+        function drawChart() {
+            if (!chartCtx) return;
+            const canvas = chartCtx.canvas;
+            const w = canvas.width;
+            const h = canvas.height;
+
+            chartCtx.clearRect(0, 0, w, h);
+
+            // Background grid
+            chartCtx.strokeStyle = '#2a2a4a';
+            chartCtx.lineWidth = 1;
+            for (let y = 0; y <= 100; y += 25) {
+                const py = h - (y / 100) * h;
+                chartCtx.beginPath();
+                chartCtx.moveTo(0, py);
+                chartCtx.lineTo(w, py);
+                chartCtx.stroke();
+
+                chartCtx.fillStyle = '#666';
+                chartCtx.font = '10px sans-serif';
+                chartCtx.fillText(y.toString(), 4, py - 3);
+            }
+
+            // Threshold line at score 70 (below = bad posture zone)
+            const thresholdY = h - (70 / 100) * h;
+            chartCtx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+            chartCtx.setLineDash([5, 5]);
+            chartCtx.beginPath();
+            chartCtx.moveTo(0, thresholdY);
+            chartCtx.lineTo(w, thresholdY);
+            chartCtx.stroke();
+            chartCtx.setLineDash([]);
+
+            if (scoreHistory.length < 2) return;
+
+            const xStep = w / Math.max(scoreHistory.length - 1, 1);
+
+            // Draw colored segments: green above 70, red below 70
+            for (let i = 1; i < scoreHistory.length; i++) {
+                const x0 = (i - 1) * xStep;
+                const x1 = i * xStep;
+                const y0 = h - (scoreHistory[i-1].score / 100) * h;
+                const y1 = h - (scoreHistory[i].score / 100) * h;
+                const avgScore = (scoreHistory[i-1].score + scoreHistory[i].score) / 2;
+
+                chartCtx.beginPath();
+                chartCtx.moveTo(x0, y0);
+                chartCtx.lineTo(x1, y1);
+                chartCtx.strokeStyle = avgScore >= 70 ? '#27ae60' : '#e74c3c';
+                chartCtx.lineWidth = 2.5;
+                chartCtx.stroke();
+            }
+
+            // Fill area under the line with gradient matching posture quality
+            for (let i = 1; i < scoreHistory.length; i++) {
+                const x0 = (i - 1) * xStep;
+                const x1 = i * xStep;
+                const y0 = h - (scoreHistory[i-1].score / 100) * h;
+                const y1 = h - (scoreHistory[i].score / 100) * h;
+                const avgScore = (scoreHistory[i-1].score + scoreHistory[i].score) / 2;
+
+                chartCtx.beginPath();
+                chartCtx.moveTo(x0, y0);
+                chartCtx.lineTo(x1, y1);
+                chartCtx.lineTo(x1, h);
+                chartCtx.lineTo(x0, h);
+                chartCtx.closePath();
+                chartCtx.fillStyle = avgScore >= 70
+                    ? 'rgba(39, 174, 96, 0.12)'
+                    : 'rgba(231, 76, 60, 0.12)';
+                chartCtx.fill();
+            }
+        }
+
+        function fetchHistory() {
+            fetch('/api/history')
+                .then(r => r.json())
+                .then(data => {
+                    scoreHistory = data;
+                    drawChart();
+                });
+        }
+
+        // --- Replays ---
+        let processingTimeout = null;
+
+        function showReplayProcessing() {
+            const grid = document.getElementById('replayGrid');
+            // Add processing card at the top
+            const processingCard = document.createElement('div');
+            processingCard.className = 'replay-card processing-card';
+            processingCard.id = 'processingCard';
+            processingCard.innerHTML = `
+                <div class="processing-indicator">
+                    <div class="processing-spinner"></div>
+                    <span>Recording clip...</span>
+                </div>
+            `;
+            // Remove existing processing card if any
+            const existing = document.getElementById('processingCard');
+            if (existing) existing.remove();
+            grid.prepend(processingCard);
+
+            // After ~8s (clip duration), refresh the replay list
+            if (processingTimeout) clearTimeout(processingTimeout);
+            processingTimeout = setTimeout(() => {
+                const card = document.getElementById('processingCard');
+                if (card) {
+                    card.innerHTML = `
+                        <div class="processing-indicator">
+                            <div class="processing-spinner"></div>
+                            <span>Saving...</span>
+                        </div>
+                    `;
+                }
+                // Give it a moment to write to disk, then refresh with retries
+                setTimeout(() => {
+                    loadReplays();
+                    // Retry once more after 3s in case file wasn't ready
+                    setTimeout(loadReplays, 3000);
+                }, 2000);
+            }, 8000);
+        }
+
+        function loadReplays() {
+            fetch('/api/replays?t=' + Date.now())
+                .then(r => r.json())
+                .then(clips => {
+                    const grid = document.getElementById('replayGrid');
+                    // Remove processing card
+                    const proc = document.getElementById('processingCard');
+                    if (proc) proc.remove();
+
+                    if (!clips.length) {
+                        grid.innerHTML = '<p style="color: #666;">No slouch events recorded yet.</p>';
+                        return;
+                    }
+                    grid.innerHTML = clips.map(clip => `
+                        <div class="replay-card">
+                            <video controls preload="metadata" aria-label="Slouch replay from ${clip.timestamp}">
+                                <source src="/replays/${clip.filename}?t=${Date.now()}" type="video/mp4">
+                            </video>
+                            <div class="replay-info">
+                                ${clip.timestamp.replace('_', ' at ')} • ${clip.size_kb} KB
+                            </div>
+                        </div>
+                    `).join('');
+                });
+        }
+
+        // --- Init ---
+        window.addEventListener('load', () => {
+            connectWebSocket();
+            initChart();
+            loadReplays();
+            loadCameras();
+            // Fetch initial recording state
+            fetch('/api/recording').then(r => r.json()).then(data => {
+                isRecording = data.recording;
+                updateRecordingUI();
+            });
+            // Set alarm toggle initial state
+            document.getElementById('alarmToggle').classList.add('active');
+            // Poll score history every 2s
+            setInterval(fetchHistory, 2000);
+        });
+
+        // Handle chart resize
+        window.addEventListener('resize', () => {
+            const canvas = document.getElementById('scoreChart');
+            canvas.width = canvas.parentElement.clientWidth;
+            canvas.height = canvas.parentElement.clientHeight;
+            drawChart();
+        });
+
+        // Pause/resume when tab is hidden/visible
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                // Close WebSocket to decrement viewer count
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.close();
+                }
+            } else {
+                // Reconnect when tab becomes visible
+                connectWebSocket();
+            }
+        });
+    </script>
+</body>
+</html>
