@@ -127,17 +127,21 @@ it triggers on half-blinks.
 
 ## Known issues
 
-- **The game segfaults at ~50 seconds.** That's right — if you survive 50 seconds,
-  the game literally crashes. Not because of the chaos effects. Not because of bad
-  code. Because Google's TensorFlow Lite C++ engine corrupts its own memory after
-  running for too long. We tried fixing it. We recreate the Face Mesh every 500
-  frames. We wrap everything in try/except. We made the arrays contiguous. TFLite
-  doesn't care. It dies anyway. In C++. Where Python can't catch it.
+- **The game crashes after a random number of seconds.** Could be 16s. Could be 50s.
+  Could be 24s. Nobody knows. MediaPipe's TensorFlow Lite C++ engine has a heap
+  corruption bug on Intel Mesa + Wayland/GNOME that causes `free(): invalid size`
+  or `SIGSEGV` at unpredictable times.
 
-  **So if you survive 50 seconds, you win by default. The game fears you.**
+  We tried:
+  - Recreating Face Mesh periodically (made it worse)
+  - Disabling GPU (MediaPipe doesn't listen)
+  - Copying frames (doesn't help)
+  - Setting buffer sizes (nope)
+  - Praying (ineffective)
 
-  Consider the segfault the ultimate jumpscare. You were staring, focused, in the
-  zone — and then your terminal says `SEGV`. Your heart rate spikes harder than any
-  flash or fake BSOD ever could. You're welcome.
+  **The crash IS the win condition.** If the game dies before you blink, you win.
+  If you blink before the game dies, you lose. It's a race between your eyelids
+  and Google's memory allocator. The ultimate staring contest isn't against the
+  screen — it's against `glibc`.
 
-  (This is a MediaPipe/TFLite bug. Blame Google. We just ship it as a feature.)
+  Your high score is how many seconds the process stayed alive. Speedrun it.
