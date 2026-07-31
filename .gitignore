@@ -74,6 +74,7 @@ demos/common/static/vendor/
 
 # ---- Media artifacts (generated output) ----
 outputs/
+screenshots/
 *.avi
 *.mp4.tmp
 
