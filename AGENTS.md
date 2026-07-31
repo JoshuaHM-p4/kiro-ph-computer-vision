@@ -83,11 +83,13 @@ any structural changes into `README.md`'s Project Structure section.
 
 - All runtime dependencies live in `requirements.txt` with **pinned versions**.
 - Develop inside a virtual environment:
+
   ```bash
   python -m venv .venv
   source .venv/bin/activate        # Windows: .venv\Scripts\activate
   pip install -r requirements.txt
   ```
+
 - When adding a dependency: pin the exact version, verify it coexists with the
   existing CV stack (OpenCV/MediaPipe/NumPy compatibility is fragile), and note
   why it was added.
@@ -99,11 +101,13 @@ any structural changes into `README.md`'s Project Structure section.
 
 - The demo suite keeps its tests under `demos/tests/` with a dedicated config.
   Participant projects keep their tests in their own folder.
+
   ```bash
   pytest -c demos/pytest.ini                  # demo suite (no camera needed)
   pytest -c demos/pytest.ini -k pinch         # focused run
   pytest projects/<username>                  # a participant's own tests
   ```
+
 - Write tests for pure processing functions (preprocessing, transforms, geometry).
   Use small fixture images/arrays; avoid depending on a live camera in unit tests.
 - For camera/stream code, isolate the capture layer behind an interface so it can
@@ -115,9 +119,11 @@ any structural changes into `README.md`'s Project Structure section.
 
 > The main application entry point is **TBD** until its scope is finalized (see
 > PRD). Expected shape once it exists:
+>
 > ```bash
 > python -m app --source 0 --model path/to/model
 > ```
+>
 > Update this section (and `README.md` Usage) when the real command lands.
 
 The demo suite is already runnable, from the repository root:

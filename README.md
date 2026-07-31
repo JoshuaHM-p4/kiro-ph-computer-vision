@@ -126,13 +126,19 @@ Read them, run them, take what you need — they are reference material, not the
 the repository.
 
 ```bash
-# One-time asset setup
+# Quick start: all seven demos in the browser, on one port
+python -m demos.home.web            # http://127.0.0.1:5000/
+```
+
+That is all you need to get going. The demos generate placeholder assets on demand,
+so you can run the setup below whenever you want nicer sample slides, images, and
+sprites.
+
+```bash
+# Optional one-time asset setup (nicer sample media)
 python -m demos.tools.make_sample_slides
 python -m demos.tools.make_sample_images
 python -m demos.tools.make_placeholder_sprites
-
-# All six in the browser, on one port
-python -m demos.home.web            # http://127.0.0.1:5000/
 
 # Or an OpenCV launcher menu for the desktop versions
 python -m demos.home.opencv_menu
