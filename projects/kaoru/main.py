@@ -10,12 +10,14 @@ import os
 import random
 import time
 
-# Force MediaPipe to use CPU inference only — the GPU delegate (EGL/OpenGL)
-# segfaults after ~50s on Intel Mesa + Wayland/GNOME.
+# Force MediaPipe to NOT use GPU — the EGL/GL context segfaults on Intel Mesa.
+# The only reliable way is to prevent EGL from initializing at all.
+# We can't unset DISPLAY (OpenCV needs it), but we can tell the GPU allocator
+# to skip GL by making the EGL library fail to load.
+os.environ.pop("MESA_GL_VERSION_OVERRIDE", None)
 os.environ["MEDIAPIPE_DISABLE_GPU"] = "1"
-os.environ["MESA_GL_VERSION_OVERRIDE"] = ""  # May prevent EGL init
-# Tell MediaPipe's calculator graph not to use GL
-os.environ["MEDIAPIPE_GPU_BUFFER_USE_GL_TEXTURE_IMAGE"] = "false"
+# This is the actual working one for Linux MediaPipe:
+os.environ["OPENCV_OPENCL_DEVICE"] = "disabled"
 
 import cv2
 import mediapipe as mp
@@ -45,8 +47,6 @@ def run(config: GameConfig | None = None) -> None:
         )
 
     face_mesh = _create_face_mesh()
-    frame_count = 0
-    FACE_MESH_RESET_INTERVAL = 300  # Reset more aggressively (every ~10s at 30fps)
 
     cap = cv2.VideoCapture(config.camera_index)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.frame_width)
@@ -113,14 +113,7 @@ def run(config: GameConfig | None = None) -> None:
         # Mirror the frame for natural interaction
         frame = cv2.flip(frame, 1)
 
-        # Periodically recreate face mesh to prevent TFLite memory corruption
-        frame_count += 1
-        if frame_count % FACE_MESH_RESET_INTERVAL == 0:
-            face_mesh.close()
-            face_mesh = _create_face_mesh()
-
         # Only run face mesh when we actually need blink detection
-        # (saves GPU and prevents the ~50s EGL segfault from hitting during idle)
         need_face_detection = game._phase in (Phase.COUNTDOWN, Phase.PLAYING)
 
         # Convert to RGB for MediaPipe — use a clean copy so effects
@@ -302,17 +295,9 @@ def run(config: GameConfig | None = None) -> None:
             break
         elif key == ord(" "):
             if state.phase == Phase.WAITING:
-                # Fresh face mesh for each game attempt
-                face_mesh.close()
-                face_mesh = _create_face_mesh()
-                frame_count = 0
                 game.start(timestamp)
             elif state.phase == Phase.BLINKED:
                 game.restart(timestamp)
-                # Fresh face mesh for each game attempt
-                face_mesh.close()
-                face_mesh = _create_face_mesh()
-                frame_count = 0
                 game.start(timestamp)
                 # Reset chaos state
                 fake_crash = chaos.FakeCrash()
