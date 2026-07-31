@@ -16,6 +16,7 @@ import numpy as np
 from .config import GameConfig
 from .core import Game, Phase, compute_ear_both_eyes
 from . import sfx
+from . import chaos
 
 
 def run(config: GameConfig | None = None) -> None:
@@ -73,6 +74,18 @@ def run(config: GameConfig | None = None) -> None:
     prev_distraction = None
     last_drone_time = 0.0
 
+    # Chaos systems
+    fake_cursor = chaos.FakeCursor(config.frame_width, config.frame_height)
+    fake_crash = chaos.FakeCrash()
+    notification_text: str | None = None
+    notification_start: float = 0.0
+    notification_duration: float = 3.0
+    next_notification: float = 8.0
+    blink_face: np.ndarray | None = None
+    leaderboard: list[dict] = chaos.load_leaderboard()
+    death_time: float = 0.0
+    last_frame_before_death: np.ndarray | None = None
+
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -98,30 +111,32 @@ def run(config: GameConfig | None = None) -> None:
             ]
             ear = compute_ear_both_eyes(landmarks)
 
+        # Save frame before death (for screenshot)
+        if state_phase_is_playing := (prev_phase == Phase.PLAYING):
+            last_frame_before_death = frame.copy()
+
         # Update game
         state = game.update(ear, face_detected, timestamp)
 
         # --- Sound effects ---
-        # Countdown beeps
         if state.phase == Phase.COUNTDOWN and state.countdown_value != prev_countdown:
             sfx.countdown_beep(state.countdown_value)
             prev_countdown = state.countdown_value
 
-        # Game start
         if state.phase == Phase.PLAYING and prev_phase == Phase.COUNTDOWN:
             sfx.game_start()
 
-        # Distraction hit
         current_distraction = state.active_distraction
         if current_distraction is not None and current_distraction != prev_distraction:
             sfx.distraction_hit()
         prev_distraction = current_distraction
 
-        # Blink death
         if state.phase == Phase.BLINKED and prev_phase != Phase.BLINKED:
             sfx.blink_death()
+            blink_face = last_frame_before_death
+            death_time = timestamp
+            leaderboard = chaos.save_to_leaderboard(state.survival_time, state.death_reason)
 
-        # Tension drone (every 2 seconds during play, intensity rises)
         if state.phase == Phase.PLAYING and timestamp - last_drone_time > 2.0:
             intensity = min(1.0, state.survival_time / 30.0)
             sfx.tension_drone(intensity)
@@ -129,19 +144,70 @@ def run(config: GameConfig | None = None) -> None:
 
         prev_phase = state.phase
 
-        # Apply distraction effects
-        if state.active_distraction is not None:
-            frame = _apply_distraction(frame, state.active_distraction.kind, rng)
-
-        # Apply permanent screen corruption (builds over time)
-        if state.phase == Phase.PLAYING and state.survival_time > config.corruption_start_time:
-            corruption = min(1.0, (state.survival_time - config.corruption_start_time)
-                             * config.corruption_intensity_per_second)
-            frame = _apply_corruption(frame, corruption, rng)
-
-        # Near-blink panic indicator
+        # === CHAOS EFFECTS (only during PLAYING) ===
         if state.phase == Phase.PLAYING:
+            t = state.survival_time
+
+            # Apply distraction effects
+            if state.active_distraction is not None:
+                frame = _apply_distraction(frame, state.active_distraction.kind, rng)
+
+            # Permanent screen corruption
+            if t > config.corruption_start_time:
+                corruption = min(1.0, (t - config.corruption_start_time)
+                                 * config.corruption_intensity_per_second)
+                frame = _apply_corruption(frame, corruption, rng)
+
+            # Near-blink panic indicator
             frame = _draw_panic_indicator(frame, ear, config)
+
+            # Psychological warfare: creepy face (after 10s)
+            if t > 10:
+                creepy_intensity = min(1.0, (t - 10) / 50.0)
+                frame = chaos.apply_creepy_face(frame, creepy_intensity)
+
+            # Heartbeat pulse (after 5s)
+            if t > 5:
+                frame = chaos.apply_heartbeat(frame, t)
+
+            # Gravity tilt (after 10s)
+            frame = chaos.apply_gravity(frame, t)
+
+            # Shrinking feed (after 20s)
+            frame = chaos.apply_shrink(frame, t)
+
+            # Ghost face (after 25s)
+            frame = chaos.apply_ghost_face(frame, t, rng)
+
+            # Subliminal frames
+            frame = chaos.apply_subliminal(frame, t, rng)
+
+            # Fake cursor
+            fake_cursor.update(timestamp, rng)
+            fake_cursor.draw(frame)
+
+            # Fake crash
+            fake_crash.maybe_trigger(t, rng)
+            if fake_crash.is_active(t):
+                frame = fake_crash.draw(frame)
+
+            # Fake notifications
+            if t > next_notification:
+                notification_text = rng.choice(chaos.FAKE_NOTIFICATIONS)
+                notification_start = t
+                next_notification = t + rng.uniform(5, 12)
+
+            if notification_text is not None:
+                progress = (t - notification_start) / notification_duration
+                if progress <= 1.0:
+                    frame = chaos.draw_notification(frame, notification_text, progress)
+                else:
+                    notification_text = None
+
+            # Window title trolling
+            new_title = chaos.get_window_title(t, rng)
+            if new_title:
+                cv2.setWindowTitle("Don't Blink", new_title)
 
         # Draw HUD
         frame = _draw_hud(frame, state, config, rng)
@@ -149,26 +215,28 @@ def run(config: GameConfig | None = None) -> None:
         # Draw penalty on game over OR resize for display
         if state.phase == Phase.BLINKED:
             # Death animation: brief glitch frames before BSOD
-            if prev_phase != Phase.BLINKED:
-                # Show glitch death sequence (few frames)
+            if prev_phase == Phase.PLAYING or (prev_phase == Phase.BLINKED and death_time == timestamp):
                 death_frame = cv2.resize(frame, (screen_w, screen_h))
-                for i in range(8):
+                for i in range(10):
                     glitch = death_frame.copy()
-                    # Increasing chaos each frame
                     noise = np.random.randint(0, 255, glitch.shape, dtype=np.uint8)
-                    alpha = i / 8.0
+                    alpha = i / 10.0
                     glitch = cv2.addWeighted(noise, alpha, glitch, 1 - alpha, 0)
-                    # Random color shifts
-                    for _ in range(i * 3):
-                        y = rng.randint(0, screen_h - 1)
-                        shift = rng.randint(-100, 100)
-                        glitch[y] = np.roll(glitch[y], shift, axis=0)
+                    for _ in range(i * 4):
+                        y_line = rng.randint(0, screen_h - 1)
+                        shift = rng.randint(-150, 150)
+                        glitch[y_line] = np.roll(glitch[y_line], shift, axis=0)
                     cv2.imshow("Don't Blink", glitch)
-                    cv2.waitKey(40)
+                    cv2.waitKey(30)
 
-            # Full-screen BSOD
+            # Full-screen enhanced death screen
             frame = np.zeros((screen_h, screen_w, 3), dtype=np.uint8)
-            frame = _draw_penalty(frame, state, config)
+            frame = chaos.draw_death_screen_enhanced(
+                frame, state, config, blink_face, leaderboard,
+                death_time, timestamp,
+            )
+            # Reset window title
+            cv2.setWindowTitle("Don't Blink", "Don't Blink - YOU DIED")
         else:
             # Resize camera frame to screen size
             frame = cv2.resize(frame, (screen_w, screen_h))
@@ -184,8 +252,19 @@ def run(config: GameConfig | None = None) -> None:
             elif state.phase == Phase.BLINKED:
                 game.restart(timestamp)
                 game.start(timestamp)
+                # Reset chaos state
+                fake_crash = chaos.FakeCrash()
+                notification_text = None
+                next_notification = timestamp + 8.0
+                blink_face = None
+                cv2.setWindowTitle("Don't Blink", "Don't Blink")
         elif key == ord("r"):
             game.restart(timestamp)
+            fake_crash = chaos.FakeCrash()
+            notification_text = None
+            next_notification = timestamp + 8.0
+            blink_face = None
+            cv2.setWindowTitle("Don't Blink", "Don't Blink")
 
     cap.release()
     face_mesh.close()
@@ -411,7 +490,7 @@ def _draw_hud(frame: np.ndarray, state, config: GameConfig, rng: random.Random) 
         red = min(255, int(t * 15))
         timer_color = (0, green, red) if t < 10 else (0, 0, 255)
 
-        timer_text = f"{t:.1f}s"
+        timer_text = chaos.get_lying_timer(t, rng)
         cv2.putText(frame, timer_text, (w - 180, 45),
                     cv2.FONT_HERSHEY_SIMPLEX, 1.5, timer_color, 3)
 
@@ -443,81 +522,6 @@ def _draw_hud(frame: np.ndarray, state, config: GameConfig, rng: random.Random) 
                             1.5, (0, 0, 255), 3)
         _draw_centered_text(frame, "COWARD", (w // 2, h // 2 + 30),
                             1.0, (0, 0, 200), 2)
-
-    return frame
-
-
-def _draw_penalty(frame: np.ndarray, state, config: GameConfig) -> np.ndarray:
-    """Draw BSOD or jumpscare on blink — fills the full screen."""
-    h, w = frame.shape[:2]
-    scale = max(0.5, min(h / 1080, w / 1920))  # scale text relative to 1080p
-
-    if config.penalty_style == "bsod":
-        frame[:] = (200, 50, 0)  # Blue in BGR
-
-        # Compute a "rank" based on survival time
-        if state.survival_time < 1:
-            rank = "LITERALLY A REFLEX"
-        elif state.survival_time < 3:
-            rank = "PATHETIC"
-        elif state.survival_time < 7:
-            rank = "BARELY HUMAN"
-        elif state.survival_time < 15:
-            rank = "ACCEPTABLE"
-        elif state.survival_time < 30:
-            rank = "IMPRESSIVE"
-        elif state.survival_time < 60:
-            rank = "MACHINE"
-        else:
-            rank = "ARE YOU EVEN HUMAN?!"
-
-        lines = [
-            "A problem has been detected and your eyes have",
-            "shut down to prevent damage to your retinas.",
-            "",
-            "INVOLUNTARY_BLINK_EXCEPTION",
-            "",
-            f"*** STOP: 0x0000BLINK (0x{int(state.survival_time * 100):08X})",
-            f"    (eyelid_control.sys, willpower.dll, human_weakness.exe)",
-            "",
-            "If this is the first time you've seen this screen,",
-            "maybe try not having human reflexes.",
-            "",
-            "If you continue to have this problem, consider:",
-            "  - Taping your eyelids open (not recommended)",
-            "  - Being a reptile (they don't blink)",
-            "  - Giving up (you already did lol)",
-            "",
-            "Technical information:",
-            f"*** survival_time:   {state.survival_time:.3f} seconds",
-            f"*** high_score:      {state.high_score:.3f} seconds",
-            f"*** blink_velocity:  INSTANTANEOUS",
-            f"*** dignity_remaining: 0%",
-            f"*** rank:            {rank}",
-            "",
-            "Collecting error data... blaming user... done.",
-            "",
-            "Press SPACE to humiliate yourself again | Q to quit in shame",
-        ]
-        font_scale = 0.6 * scale
-        thickness = max(1, int(2 * scale))
-        line_height = int(32 * scale)
-        y = int(50 * scale)
-        x = int(50 * scale)
-        for line in lines:
-            cv2.putText(frame, line, (x, y),
-                        cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), thickness)
-            y += line_height
-    else:
-        frame[:] = (0, 0, 180)
-        _draw_centered_text(frame, "YOU BLINKED", (w // 2, h // 2 - int(80 * scale)),
-                            3.0 * scale, (255, 255, 255), max(1, int(5 * scale)))
-        _draw_centered_text(frame, f"{state.survival_time:.1f}s", (w // 2, h // 2),
-                            2.5 * scale, (0, 255, 255), max(1, int(4 * scale)))
-        _draw_centered_text(frame, "L", (w // 2, h // 2 + int(80 * scale)),
-                            2.0 * scale, (0, 0, 255), max(1, int(4 * scale)))
-        _draw_centered_text(frame, "SPACE = retry | Q = quit", (w // 2, h - int(60 * scale)),
-                            0.8 * scale, (200, 200, 200), max(1, int(2 * scale)))
 
     return frame
 

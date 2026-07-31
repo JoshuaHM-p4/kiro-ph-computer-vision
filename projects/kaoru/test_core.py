@@ -124,21 +124,26 @@ class TestGamePhases:
         assert state.phase == Phase.PLAYING
 
     def test_face_lost_during_play(self):
+        """Face leaving the screen is now instant death."""
         game = Game(make_config(countdown_seconds=0), seed=42)
         game.start(0.0)
         game.update(0.3, True, 0.1)  # start playing
 
         state = game.update(0.3, False, 1.0)
-        assert state.phase == Phase.NO_FACE
+        assert state.phase == Phase.BLINKED
+        assert state.death_reason == "face_lost"
+        assert game.is_game_over()
 
     def test_face_regained_resumes(self):
+        """Face lost = game over, no resuming."""
         game = Game(make_config(countdown_seconds=0), seed=42)
         game.start(0.0)
         game.update(0.3, True, 0.1)
-        game.update(0.3, False, 1.0)  # lose face
+        game.update(0.3, False, 1.0)  # dead
 
-        state = game.update(0.3, True, 2.0)  # regain face
-        assert state.phase == Phase.PLAYING
+        # Can't resume — game is over
+        state = game.update(0.3, True, 2.0)
+        assert state.phase == Phase.BLINKED
 
 
 # ------------------------------------------------------------------

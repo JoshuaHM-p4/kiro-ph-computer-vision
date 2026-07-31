@@ -51,6 +51,7 @@ class GameState:
     message: str                    # display text
     penalty_style: str              # "bsod" or "jumpscare"
     blink_count: int                # number of near-blinks detected
+    death_reason: str               # "blink" or "face_lost" or ""
 
 
 def compute_ear(landmarks: list[tuple[float, float]], indices: list[int]) -> float:
@@ -118,6 +119,7 @@ class Game:
         self._survival_time: float = 0.0
         self._ear_value: float = 0.3
         self._blink_count: int = 0
+        self._death_reason: str = ""
 
     # ------------------------------------------------------------------
     # Public API
@@ -139,9 +141,13 @@ class Game:
         if self._phase == Phase.BLINKED:
             return self._make_state(timestamp)
 
-        # Handle face loss
+        # Handle face loss — you left the screen = instant death
         if not face_detected and self._phase == Phase.PLAYING:
-            self._phase = Phase.NO_FACE
+            self._phase = Phase.BLINKED
+            self._death_reason = "face_lost"
+            self._blink_count += 1
+            if self._survival_time > self._high_score:
+                self._high_score = self._survival_time
             return self._make_state(timestamp)
 
         if face_detected and self._phase == Phase.NO_FACE:
@@ -173,6 +179,7 @@ class Game:
                 if self._eyes_closed_frames >= self.config.blink_frames:
                     # BLINKED!
                     self._phase = Phase.BLINKED
+                    self._death_reason = "blink"
                     self._blink_count += 1
                     if self._survival_time > self._high_score:
                         self._high_score = self._survival_time
@@ -198,6 +205,7 @@ class Game:
         self._distraction_history = []
         self._survival_time = 0.0
         self._blink_count = 0
+        self._death_reason = ""
         self._distraction_interval = self.config.distraction_interval_initial
         return self._make_state(timestamp)
 
@@ -256,6 +264,8 @@ class Game:
             case Phase.PLAYING:
                 return f"{self._survival_time:.1f}s"
             case Phase.BLINKED:
+                if self._death_reason == "face_lost":
+                    return f"YOU LEFT THE SCREEN! {self._survival_time:.1f}s"
                 return f"YOU BLINKED! {self._survival_time:.1f}s"
             case Phase.NO_FACE:
                 return "WHERE'D YOU GO? Show your face!"
@@ -274,4 +284,5 @@ class Game:
             message=self._get_message(timestamp),
             penalty_style=self.config.penalty_style,
             blink_count=self._blink_count,
+            death_reason=self._death_reason,
         )
