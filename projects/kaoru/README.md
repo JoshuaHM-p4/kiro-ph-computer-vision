@@ -127,9 +127,17 @@ it triggers on half-blinks.
 
 ## Known issues
 
-- **MediaPipe segfault at ~50s:** TensorFlow Lite's C++ backend can corrupt its own
-  memory on long-running sessions. We mitigate this by recreating the Face Mesh
-  instance every 500 frames and wrapping the inference in try/except. If it still
-  crashes, it's a MediaPipe bug, not ours. The game automatically recovers if it
-  can catch the error; a hard segfault means TFLite died before Python could
-  intercept it. Blame Google.
+- **The game segfaults at ~50 seconds.** That's right — if you survive 50 seconds,
+  the game literally crashes. Not because of the chaos effects. Not because of bad
+  code. Because Google's TensorFlow Lite C++ engine corrupts its own memory after
+  running for too long. We tried fixing it. We recreate the Face Mesh every 500
+  frames. We wrap everything in try/except. We made the arrays contiguous. TFLite
+  doesn't care. It dies anyway. In C++. Where Python can't catch it.
+
+  **So if you survive 50 seconds, you win by default. The game fears you.**
+
+  Consider the segfault the ultimate jumpscare. You were staring, focused, in the
+  zone — and then your terminal says `SEGV`. Your heart rate spikes harder than any
+  flash or fake BSOD ever could. You're welcome.
+
+  (This is a MediaPipe/TFLite bug. Blame Google. We just ship it as a feature.)
