@@ -26,12 +26,18 @@ def run(config: GameConfig | None = None) -> None:
 
     # MediaPipe Face Mesh
     mp_face_mesh = mp.solutions.face_mesh
-    face_mesh = mp_face_mesh.FaceMesh(
-        max_num_faces=1,
-        refine_landmarks=True,
-        min_detection_confidence=config.min_detection_confidence,
-        min_tracking_confidence=config.min_tracking_confidence,
-    )
+
+    def _create_face_mesh():
+        return mp_face_mesh.FaceMesh(
+            max_num_faces=1,
+            refine_landmarks=True,
+            min_detection_confidence=config.min_detection_confidence,
+            min_tracking_confidence=config.min_tracking_confidence,
+        )
+
+    face_mesh = _create_face_mesh()
+    frame_count = 0
+    FACE_MESH_RESET_INTERVAL = 500  # Recreate every 500 frames to avoid TFLite segfault
 
     cap = cv2.VideoCapture(config.camera_index)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.frame_width)
@@ -96,15 +102,27 @@ def run(config: GameConfig | None = None) -> None:
         # Mirror the frame for natural interaction
         frame = cv2.flip(frame, 1)
 
+        # Periodically recreate face mesh to prevent TFLite memory corruption
+        frame_count += 1
+        if frame_count % FACE_MESH_RESET_INTERVAL == 0:
+            face_mesh.close()
+            face_mesh = _create_face_mesh()
+
         # Convert to RGB for MediaPipe
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = face_mesh.process(rgb)
+        try:
+            results = face_mesh.process(rgb)
+        except Exception:
+            # If MediaPipe crashes, recreate it
+            face_mesh.close()
+            face_mesh = _create_face_mesh()
+            results = None
 
         # Extract EAR
         face_detected = False
         ear = 0.3  # default (open)
 
-        if results.multi_face_landmarks:
+        if results and results.multi_face_landmarks:
             face_detected = True
             landmarks = [
                 (lm.x, lm.y) for lm in results.multi_face_landmarks[0].landmark

@@ -124,3 +124,12 @@ MediaPipe Face Mesh runs at 10-20ms/frame on CPU — basically instant compared 
 YOLO. The EAR approach (ratio of eye vertical to horizontal distance) is dead simple
 but works remarkably well. Hysteresis between open/close thresholds is essential or
 it triggers on half-blinks.
+
+## Known issues
+
+- **MediaPipe segfault at ~50s:** TensorFlow Lite's C++ backend can corrupt its own
+  memory on long-running sessions. We mitigate this by recreating the Face Mesh
+  instance every 500 frames and wrapping the inference in try/except. If it still
+  crashes, it's a MediaPipe bug, not ours. The game automatically recovers if it
+  can catch the error; a hard segfault means TFLite died before Python could
+  intercept it. Blame Google.
