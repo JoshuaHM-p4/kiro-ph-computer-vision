@@ -216,10 +216,15 @@ def apply_heartbeat(frame: np.ndarray, survival_time: float) -> np.ndarray:
         h, w = frame.shape[:2]
         zoom = 1.0 + pulse
         new_h, new_w = int(h * zoom), int(w * zoom)
-        resized = cv2.resize(frame, (new_w, new_h))
-        y_off = (new_h - h) // 2
-        x_off = (new_w - w) // 2
-        frame = resized[y_off:y_off + h, x_off:x_off + w]
+        if new_h <= h or new_w <= w:
+            return frame
+        try:
+            resized = cv2.resize(frame, (new_w, new_h))
+            y_off = (new_h - h) // 2
+            x_off = (new_w - w) // 2
+            frame = resized[y_off:y_off + h, x_off:x_off + w].copy()
+        except Exception:
+            pass
 
     return frame
 
@@ -256,18 +261,18 @@ def apply_shrink(frame: np.ndarray, survival_time: float) -> np.ndarray:
     scale = 1.0 - shrink_progress
 
     h, w = frame.shape[:2]
-    new_w = int(w * scale)
-    new_h = int(h * scale)
+    new_w = max(100, int(w * scale))
+    new_h = max(100, int(h * scale))
 
-    if new_w < 100 or new_h < 100:
+    try:
+        small = cv2.resize(frame, (new_w, new_h))
+        result = np.zeros((h, w, 3), dtype=np.uint8)
+        x_off = (w - new_w) // 2
+        y_off = (h - new_h) // 2
+        result[y_off:y_off + new_h, x_off:x_off + new_w] = small
+        return result
+    except Exception:
         return frame
-
-    small = cv2.resize(frame, (new_w, new_h))
-    result = np.zeros_like(frame)
-    x_off = (w - new_w) // 2
-    y_off = (h - new_h) // 2
-    result[y_off:y_off + new_h, x_off:x_off + new_w] = small
-    return result
 
 
 # ------------------------------------------------------------------

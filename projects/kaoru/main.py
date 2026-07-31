@@ -149,46 +149,55 @@ def run(config: GameConfig | None = None) -> None:
             t = state.survival_time
             frame_start = time.monotonic()
 
-            # Apply distraction effects
-            if state.active_distraction is not None:
-                frame = _apply_distraction(frame, state.active_distraction.kind, rng)
+            try:
+                # Apply distraction effects
+                if state.active_distraction is not None:
+                    frame = _apply_distraction(frame, state.active_distraction.kind, rng)
 
-            # Permanent screen corruption
-            if t > config.corruption_start_time:
-                corruption = min(1.0, (t - config.corruption_start_time)
-                                 * config.corruption_intensity_per_second)
-                frame = _apply_corruption(frame, corruption, rng)
+                # Permanent screen corruption
+                if t > config.corruption_start_time:
+                    corruption = min(1.0, (t - config.corruption_start_time)
+                                     * config.corruption_intensity_per_second)
+                    frame = _apply_corruption(frame, corruption, rng)
 
-            # Near-blink panic indicator
-            frame = _draw_panic_indicator(frame, ear, config)
+                # Near-blink panic indicator
+                frame = _draw_panic_indicator(frame, ear, config)
 
-            # Only apply expensive chaos if we have frame budget left
-            # (keeps GNOME from killing us for not responding)
-            frame_budget_ok = (time.monotonic() - frame_start) < 0.025
+                # Only apply expensive chaos if we have frame budget left
+                frame_budget_ok = (time.monotonic() - frame_start) < 0.020
 
-            # Psychological warfare: creepy face (after 10s)
-            if t > 10 and frame_budget_ok:
-                creepy_intensity = min(1.0, (t - 10) / 50.0)
-                frame = chaos.apply_creepy_face(frame, creepy_intensity)
+                # Psychological warfare: creepy face (after 10s)
+                if t > 10 and frame_budget_ok:
+                    creepy_intensity = min(1.0, (t - 10) / 50.0)
+                    frame = chaos.apply_creepy_face(frame, creepy_intensity)
 
-            # Heartbeat pulse (after 5s)
-            if t > 5:
-                frame = chaos.apply_heartbeat(frame, t)
+                # Heartbeat pulse (after 5s)
+                if t > 5:
+                    frame = chaos.apply_heartbeat(frame, t)
 
-            # Gravity tilt (after 10s)
-            if t > 10:
-                frame = chaos.apply_gravity(frame, t)
+                # Gravity tilt (after 10s)
+                if t > 10:
+                    frame = chaos.apply_gravity(frame, t)
 
-            # Shrinking feed (after 20s)
-            if t > 20 and frame_budget_ok:
-                frame = chaos.apply_shrink(frame, t)
+                # Shrinking feed (after 20s)
+                if t > 20 and frame_budget_ok:
+                    frame = chaos.apply_shrink(frame, t)
 
-            # Ghost face (after 25s)
-            if t > 25:
-                frame = chaos.apply_ghost_face(frame, t, rng)
+                # Ghost face (after 25s)
+                if t > 25:
+                    frame = chaos.apply_ghost_face(frame, t, rng)
 
-            # Subliminal frames
-            frame = chaos.apply_subliminal(frame, t, rng)
+                # Subliminal frames
+                frame = chaos.apply_subliminal(frame, t, rng)
+
+                # Ensure frame is contiguous (np.roll and slicing can make it non-contiguous)
+                if not frame.flags['C_CONTIGUOUS']:
+                    frame = np.ascontiguousarray(frame)
+
+            except Exception:
+                # If any effect crashes, just continue with whatever frame we have
+                if not frame.flags['C_CONTIGUOUS']:
+                    frame = np.ascontiguousarray(frame)
 
             # Fake cursor
             fake_cursor.update(timestamp, rng)
@@ -335,8 +344,9 @@ def _apply_distraction(frame: np.ndarray, kind: str, rng: random.Random) -> np.n
             y1 = max(0, center_y - crop_size)
             x2 = min(w, center_x + crop_size)
             y2 = min(h, center_y + crop_size)
-            cropped = frame[y1:y2, x1:x2]
-            frame = cv2.resize(cropped, (w, h))
+            if x2 - x1 > 10 and y2 - y1 > 10:
+                cropped = frame[y1:y2, x1:x2].copy()
+                frame = cv2.resize(cropped, (w, h))
 
         case "strobe":
             color = [rng.randint(0, 255) for _ in range(3)]
@@ -347,7 +357,8 @@ def _apply_distraction(frame: np.ndarray, kind: str, rng: random.Random) -> np.n
             frame = cv2.flip(frame, 1)
 
         case "pixelate":
-            small = cv2.resize(frame, (w // 20, h // 20), interpolation=cv2.INTER_LINEAR)
+            small = cv2.resize(frame, (max(1, w // 20), max(1, h // 20)),
+                               interpolation=cv2.INTER_LINEAR)
             frame = cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
 
         case "blackout":
