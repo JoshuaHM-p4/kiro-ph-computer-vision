@@ -6,8 +6,16 @@ Run from the repo root:
 
 from __future__ import annotations
 
+import os
 import random
 import time
+
+# Force MediaPipe to use CPU inference only — the GPU delegate (EGL/OpenGL)
+# segfaults after ~50s on Intel Mesa + Wayland/GNOME.
+os.environ["MEDIAPIPE_DISABLE_GPU"] = "1"
+os.environ["MESA_GL_VERSION_OVERRIDE"] = ""  # May prevent EGL init
+# Tell MediaPipe's calculator graph not to use GL
+os.environ["MEDIAPIPE_GPU_BUFFER_USE_GL_TEXTURE_IMAGE"] = "false"
 
 import cv2
 import mediapipe as mp
@@ -30,6 +38,7 @@ def run(config: GameConfig | None = None) -> None:
     def _create_face_mesh():
         return mp_face_mesh.FaceMesh(
             max_num_faces=1,
+            static_image_mode=False,
             refine_landmarks=True,
             min_detection_confidence=config.min_detection_confidence,
             min_tracking_confidence=config.min_tracking_confidence,
@@ -37,11 +46,13 @@ def run(config: GameConfig | None = None) -> None:
 
     face_mesh = _create_face_mesh()
     frame_count = 0
-    FACE_MESH_RESET_INTERVAL = 500  # Recreate every 500 frames to avoid TFLite segfault
+    FACE_MESH_RESET_INTERVAL = 300  # Reset more aggressively (every ~10s at 30fps)
 
     cap = cv2.VideoCapture(config.camera_index)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.frame_width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.frame_height)
+    # Minimize internal buffer — prevents V4L2 buffer overflow segfault
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
     if not cap.isOpened():
         print(f"ERROR: Could not open camera {config.camera_index}")
@@ -108,8 +119,9 @@ def run(config: GameConfig | None = None) -> None:
             face_mesh.close()
             face_mesh = _create_face_mesh()
 
-        # Convert to RGB for MediaPipe
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        # Convert to RGB for MediaPipe — use a clean copy so effects
+        # on the BGR frame can never corrupt MediaPipe's input buffer
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB).copy()
         try:
             results = face_mesh.process(rgb)
         except Exception:
