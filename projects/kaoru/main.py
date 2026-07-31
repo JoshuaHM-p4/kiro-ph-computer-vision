@@ -119,20 +119,24 @@ def run(config: GameConfig | None = None) -> None:
             face_mesh.close()
             face_mesh = _create_face_mesh()
 
+        # Only run face mesh when we actually need blink detection
+        # (saves GPU and prevents the ~50s EGL segfault from hitting during idle)
+        need_face_detection = game._phase in (Phase.COUNTDOWN, Phase.PLAYING)
+
         # Convert to RGB for MediaPipe — use a clean copy so effects
         # on the BGR frame can never corrupt MediaPipe's input buffer
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB).copy()
-        try:
-            results = face_mesh.process(rgb)
-        except Exception:
-            # If MediaPipe crashes, recreate it
-            face_mesh.close()
-            face_mesh = _create_face_mesh()
-            results = None
-
-        # Extract EAR
         face_detected = False
         ear = 0.3  # default (open)
+        results = None
+
+        if need_face_detection:
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB).copy()
+            try:
+                results = face_mesh.process(rgb)
+            except Exception:
+                face_mesh.close()
+                face_mesh = _create_face_mesh()
+                results = None
 
         if results and results.multi_face_landmarks:
             face_detected = True
@@ -298,9 +302,17 @@ def run(config: GameConfig | None = None) -> None:
             break
         elif key == ord(" "):
             if state.phase == Phase.WAITING:
+                # Fresh face mesh for each game attempt
+                face_mesh.close()
+                face_mesh = _create_face_mesh()
+                frame_count = 0
                 game.start(timestamp)
             elif state.phase == Phase.BLINKED:
                 game.restart(timestamp)
+                # Fresh face mesh for each game attempt
+                face_mesh.close()
+                face_mesh = _create_face_mesh()
+                frame_count = 0
                 game.start(timestamp)
                 # Reset chaos state
                 fake_crash = chaos.FakeCrash()
