@@ -1,0 +1,11 @@
+# Scavenger Hunt — Python 3.12, CPU only
+#
+# Install with:
+#   pip install -r requirements.txt
+#
+# ⚠  First install: ~200 MB download (torch CPU build + ultralytics)
+# ⚠  First run:     ~6 MB download (yolov8n.pt weights → saved to weights/)
+
+opencv-python==4.10.0.84
+ultralytics==8.3.157        # pulls in torch (CPU), torchvision, numpy, pillow, etc.
+pytest==8.3.5               # for running test_logic.py

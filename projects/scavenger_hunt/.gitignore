@@ -1,0 +1,25 @@
+# YOLO / model weights — can be hundreds of MB, never commit these
+weights/
+*.pt
+*.onnx
+*.engine
+*.torchscript
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Ultralytics run artefacts
+runs/
+
+# IDE
+.vscode/
+.idea/
