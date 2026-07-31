@@ -147,6 +147,7 @@ def run(config: GameConfig | None = None) -> None:
         # === CHAOS EFFECTS (only during PLAYING) ===
         if state.phase == Phase.PLAYING:
             t = state.survival_time
+            frame_start = time.monotonic()
 
             # Apply distraction effects
             if state.active_distraction is not None:
@@ -161,8 +162,12 @@ def run(config: GameConfig | None = None) -> None:
             # Near-blink panic indicator
             frame = _draw_panic_indicator(frame, ear, config)
 
+            # Only apply expensive chaos if we have frame budget left
+            # (keeps GNOME from killing us for not responding)
+            frame_budget_ok = (time.monotonic() - frame_start) < 0.025
+
             # Psychological warfare: creepy face (after 10s)
-            if t > 10:
+            if t > 10 and frame_budget_ok:
                 creepy_intensity = min(1.0, (t - 10) / 50.0)
                 frame = chaos.apply_creepy_face(frame, creepy_intensity)
 
@@ -171,13 +176,16 @@ def run(config: GameConfig | None = None) -> None:
                 frame = chaos.apply_heartbeat(frame, t)
 
             # Gravity tilt (after 10s)
-            frame = chaos.apply_gravity(frame, t)
+            if t > 10:
+                frame = chaos.apply_gravity(frame, t)
 
             # Shrinking feed (after 20s)
-            frame = chaos.apply_shrink(frame, t)
+            if t > 20 and frame_budget_ok:
+                frame = chaos.apply_shrink(frame, t)
 
             # Ghost face (after 25s)
-            frame = chaos.apply_ghost_face(frame, t, rng)
+            if t > 25:
+                frame = chaos.apply_ghost_face(frame, t, rng)
 
             # Subliminal frames
             frame = chaos.apply_subliminal(frame, t, rng)
@@ -214,20 +222,21 @@ def run(config: GameConfig | None = None) -> None:
 
         # Draw penalty on game over OR resize for display
         if state.phase == Phase.BLINKED:
-            # Death animation: brief glitch frames before BSOD
+            # Death animation: quick glitch frames (keep short so GNOME doesn't kill us)
             if prev_phase == Phase.PLAYING or (prev_phase == Phase.BLINKED and death_time == timestamp):
                 death_frame = cv2.resize(frame, (screen_w, screen_h))
-                for i in range(10):
+                for i in range(5):
                     glitch = death_frame.copy()
                     noise = np.random.randint(0, 255, glitch.shape, dtype=np.uint8)
-                    alpha = i / 10.0
+                    alpha = i / 5.0
                     glitch = cv2.addWeighted(noise, alpha, glitch, 1 - alpha, 0)
-                    for _ in range(i * 4):
+                    num_glitch_lines = i * 5
+                    for _ in range(num_glitch_lines):
                         y_line = rng.randint(0, screen_h - 1)
                         shift = rng.randint(-150, 150)
                         glitch[y_line] = np.roll(glitch[y_line], shift, axis=0)
                     cv2.imshow("Don't Blink", glitch)
-                    cv2.waitKey(30)
+                    cv2.waitKey(25)
 
             # Full-screen enhanced death screen
             frame = np.zeros((screen_h, screen_w, 3), dtype=np.uint8)
@@ -243,6 +252,8 @@ def run(config: GameConfig | None = None) -> None:
 
         cv2.imshow("Don't Blink", frame)
 
+        # waitKey processes X11 events — GNOME kills the window if these
+        # aren't processed frequently enough. Use at least 1ms.
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q"):
             break
@@ -403,33 +414,26 @@ def _apply_corruption(frame: np.ndarray, intensity: float, rng: random.Random) -
     """Apply permanent screen corruption that builds over time.
 
     intensity: 0.0 to 1.0 (grows as the game goes on)
+    Uses vectorized numpy ops to stay fast.
     """
     h, w = frame.shape[:2]
     if intensity <= 0:
         return frame
 
-    # Random dead pixels
-    num_pixels = int(intensity * 500)
-    for _ in range(num_pixels):
-        x = rng.randint(0, w - 1)
-        y = rng.randint(0, h - 1)
-        frame[y, x] = [rng.randint(0, 255), rng.randint(0, 255), rng.randint(0, 255)]
+    # Random dead pixels (vectorized)
+    num_pixels = int(intensity * 300)
+    if num_pixels > 0:
+        ys = np.random.randint(0, h, num_pixels)
+        xs = np.random.randint(0, w, num_pixels)
+        colors = np.random.randint(0, 255, (num_pixels, 3), dtype=np.uint8)
+        frame[ys, xs] = colors
 
     # Horizontal line glitches
-    num_lines = int(intensity * 5)
+    num_lines = int(intensity * 3)
     for _ in range(num_lines):
         y = rng.randint(0, h - 1)
-        shift = rng.randint(-20, 20)
+        shift = rng.randint(-15, 15)
         frame[y] = np.roll(frame[y], shift, axis=0)
-
-    # Slight color drift
-    if intensity > 0.3:
-        drift = int(intensity * 30)
-        channel = rng.randint(0, 2)
-        frame[:, :, channel] = np.clip(
-            frame[:, :, channel].astype(int) + rng.randint(-drift, drift),
-            0, 255
-        ).astype(np.uint8)
 
     return frame
 
