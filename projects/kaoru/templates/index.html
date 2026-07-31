@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Don't Blink</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: #000;
+            color: #fff;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #video-feed {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        /* HUD overlay */
+        .hud {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .timer {
+            font-size: 3rem;
+            font-weight: bold;
+            color: #0f0;
+            text-shadow: 0 0 20px #0f0;
+        }
+
+        .high-score {
+            font-size: 1rem;
+            color: #888;
+        }
+
+        .ear-debug {
+            font-size: 0.7rem;
+            color: #555;
+        }
+
+        /* Center message */
+        .center-msg {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 20;
+            pointer-events: none;
+        }
+
+        .center-msg h1 {
+            font-size: 4rem;
+            text-shadow: 0 0 30px #fff;
+        }
+
+        .center-msg .sub {
+            font-size: 1.2rem;
+            color: #aaa;
+            margin-top: 0.5rem;
+        }
+
+        .countdown {
+            font-size: 10rem;
+            color: #0ff;
+            text-shadow: 0 0 50px #0ff;
+            animation: pulse 1s ease-in-out;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1.5); opacity: 0; }
+            50% { opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        /* Distraction overlays */
+        .distraction-overlay {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 15;
+            display: none;
+        }
+
+        .distraction-overlay.active { display: block; }
+
+        .flash-white { background: rgba(255, 255, 255, 0.9); }
+        .flash-red { background: rgba(255, 0, 0, 0.8); }
+        .invert { filter: invert(1); }
+
+        .jumpscare-text {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 8rem;
+            color: #f00;
+            text-shadow: 0 0 30px #f00;
+            animation: shake 0.1s infinite;
+        }
+
+        .strobe {
+            animation: strobe-anim 0.05s infinite alternate;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translate(0); }
+            25% { transform: translate(-10px, 10px); }
+            75% { transform: translate(10px, -10px); }
+        }
+
+        @keyframes strobe-anim {
+            from { background: rgba(255, 0, 255, 0.7); }
+            to { background: rgba(0, 255, 0, 0.7); }
+        }
+
+        /* Penalty overlays */
+        .penalty-overlay {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 100;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .penalty-overlay.active {
+            display: flex;
+        }
+
+        .bsod {
+            background: #0000d0;
+            padding: 3rem;
+            text-align: left;
+            font-size: 0.9rem;
+            line-height: 1.8;
+            white-space: pre-wrap;
+        }
+
+        .jumpscare-penalty {
+            background: #200;
+            animation: flash-bg 0.1s 5;
+        }
+
+        .jumpscare-penalty .skull {
+            font-size: 12rem;
+            animation: shake 0.15s infinite;
+        }
+
+        @keyframes flash-bg {
+            50% { background: #f00; }
+        }
+
+        .penalty-overlay button {
+            margin-top: 2rem;
+            padding: 1rem 2rem;
+            font-size: 1.3rem;
+            background: #fff;
+            color: #000;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            pointer-events: auto;
+        }
+
+        /* Start button */
+        .start-btn {
+            pointer-events: auto;
+            padding: 1rem 3rem;
+            font-size: 1.5rem;
+            font-family: inherit;
+            background: #0f0;
+            color: #000;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 1rem;
+            animation: pulse 2s infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <img id="video-feed" alt="Camera" />
+
+        <div class="hud">
+            <div>
+                <div class="timer" id="timer" style="display:none;">0.0s</div>
+                <div class="high-score" id="high-score"></div>
+            </div>
+            <div class="ear-debug" id="ear-debug"></div>
+        </div>
+
+        <div class="center-msg" id="center-msg">
+            <h1>DON'T BLINK</h1>
+            <div class="sub">The screen will try to make you blink.</div>
+            <div class="sub" style="color:#f66; margin-top:0.5rem; font-size:0.8rem;">⚠️ WARNING: FLASHING LIGHTS / STROBES / SCREEN EFFECTS<br>Not suitable for photosensitive epilepsy</div>
+            <button class="start-btn" id="start-btn" onclick="startGame()">FULLSCREEN & START</button>
+        </div>
+
+        <!-- Distraction layer -->
+        <div class="distraction-overlay" id="distraction-layer"></div>
+
+        <!-- BSOD penalty -->
+        <div class="penalty-overlay bsod" id="bsod-overlay">
+            <pre id="bsod-text"></pre>
+            <button onclick="restartGame()">TRY AGAIN</button>
+        </div>
+
+        <!-- Jumpscare penalty -->
+        <div class="penalty-overlay jumpscare-penalty" id="jumpscare-overlay">
+            <div class="skull">💀</div>
+            <div style="font-size:2rem;">YOU BLINKED!</div>
+            <div id="jumpscare-time" style="font-size:1.5rem; color:#0ff; margin-top:0.5rem;"></div>
+            <button onclick="restartGame()">TRY AGAIN</button>
+        </div>
+    </div>
+
+    <script>
+        const videoFeed = document.getElementById('video-feed');
+        const timerEl = document.getElementById('timer');
+        const highScoreEl = document.getElementById('high-score');
+        const earDebug = document.getElementById('ear-debug');
+        const centerMsg = document.getElementById('center-msg');
+        const startBtn = document.getElementById('start-btn');
+        const distractionLayer = document.getElementById('distraction-layer');
+
+        let ws = null;
+        const bsodTexts = [
+            "BOO!", "👁️", "BLINK!", "DON'T!", "💀", "BEHIND YOU", "LOOK OUT!"
+        ];
+
+        function connect() {
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${location.host}/ws`);
+
+            ws.onopen = () => console.log('Connected');
+            ws.onclose = () => setTimeout(connect, 2000);
+            ws.onerror = () => ws.close();
+            ws.onmessage = (event) => updateUI(JSON.parse(event.data));
+        }
+
+        function sendCommand(cmd) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ command: cmd }));
+            }
+        }
+
+        function startGame() {
+            document.documentElement.requestFullscreen().catch(() => {});
+            centerMsg.style.display = 'none';
+            sendCommand('start');
+        }
+
+        function restartGame() {
+            document.getElementById('bsod-overlay').classList.remove('active');
+            document.getElementById('jumpscare-overlay').classList.remove('active');
+            centerMsg.style.display = 'none';
+            sendCommand('restart');
+        }
+
+        function updateUI(data) {
+            // Video
+            if (data.frame) {
+                videoFeed.src = 'data:image/jpeg;base64,' + data.frame;
+            }
+
+            // Debug
+            earDebug.textContent = `EAR: ${data.ear}`;
+
+            // Phase handling
+            switch (data.phase) {
+                case 'WAITING':
+                    timerEl.style.display = 'none';
+                    centerMsg.style.display = 'block';
+                    break;
+
+                case 'COUNTDOWN':
+                    centerMsg.innerHTML = `<div class="countdown">${data.countdown_value || 'GO!'}</div>`;
+                    centerMsg.style.display = 'block';
+                    timerEl.style.display = 'none';
+                    break;
+
+                case 'PLAYING':
+                    centerMsg.style.display = 'none';
+                    timerEl.style.display = 'block';
+                    timerEl.textContent = data.survival_time + 's';
+                    if (data.high_score > 0) {
+                        highScoreEl.textContent = `Best: ${data.high_score}s`;
+                    }
+                    break;
+
+                case 'NO_FACE':
+                    centerMsg.innerHTML = '<h1 style="color:#f00;">SHOW YOUR FACE!</h1>';
+                    centerMsg.style.display = 'block';
+                    break;
+
+                case 'BLINKED':
+                    timerEl.style.display = 'none';
+                    showPenalty(data);
+                    break;
+            }
+
+            // Distractions (browser-side for maximum impact)
+            applyDistraction(data.distraction);
+        }
+
+        function applyDistraction(kind) {
+            distractionLayer.className = 'distraction-overlay';
+            distractionLayer.innerHTML = '';
+
+            if (!kind) return;
+
+            distractionLayer.classList.add('active');
+
+            switch (kind) {
+                case 'flash_white':
+                    distractionLayer.classList.add('flash-white');
+                    break;
+                case 'flash_red':
+                    distractionLayer.classList.add('flash-red');
+                    break;
+                case 'jumpscare_text':
+                    distractionLayer.classList.add('jumpscare-text');
+                    distractionLayer.textContent = bsodTexts[Math.floor(Math.random() * bsodTexts.length)];
+                    break;
+                case 'static':
+                    distractionLayer.style.background = `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'><filter id=\'n\'><feTurbulence baseFrequency=\'0.9\'/></filter><rect width=\'100%\' height=\'100%\' filter=\'url(%23n)\'/></svg>')}")`;
+                    distractionLayer.style.opacity = '0.6';
+                    break;
+                case 'invert':
+                    document.body.style.filter = 'invert(1)';
+                    setTimeout(() => { document.body.style.filter = ''; }, 300);
+                    break;
+                case 'strobe':
+                    distractionLayer.classList.add('strobe');
+                    break;
+                case 'zoom':
+                    videoFeed.style.transform = 'scale(2)';
+                    setTimeout(() => { videoFeed.style.transform = ''; }, 300);
+                    break;
+                case 'shake':
+                    document.body.style.animation = 'shake 0.1s 3';
+                    setTimeout(() => { document.body.style.animation = ''; }, 300);
+                    break;
+            }
+        }
+
+        function showPenalty(data) {
+            if (data.penalty_style === 'bsod') {
+                const el = document.getElementById('bsod-overlay');
+                document.getElementById('bsod-text').textContent =
+`A problem has been detected and your eyes have
+shut down to prevent damage to your retinas.
+
+INVOLUNTARY_BLINK_EXCEPTION
+
+*** STOP: 0x0000BLINK
+    (EAR=${data.ear}, threshold=0.21)
+
+If this is the first time you've seen this screen,
+maybe try not having human reflexes.
+
+Technical information:
+*** survival_time: ${data.survival_time} seconds
+*** high_score:    ${data.high_score} seconds
+
+Your eyes betrayed you.`;
+                el.classList.add('active');
+            } else {
+                const el = document.getElementById('jumpscare-overlay');
+                document.getElementById('jumpscare-time').textContent = data.survival_time + 's';
+                el.classList.add('active');
+            }
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                startGame();
+            } else if (e.code === 'KeyR') {
+                restartGame();
+            }
+        });
+
+        // Start connection immediately
+        connect();
+    </script>
+</body>
+</html>
